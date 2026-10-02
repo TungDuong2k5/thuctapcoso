@@ -61,6 +61,7 @@ export default function Projects() {
               <span className={`tag ${p.myRole}`}>{p.myRole === 'leader' ? 'Trưởng nhóm' : 'Thành viên'}</span>
             </div>
             <p className="muted">{p.description || 'Không có mô tả'}</p>
+            {p.progress && <ProjectProgress progress={p.progress} />}
             <small className="muted">
               {p.startDate || '?'} → {p.endDate || '?'} · Tạo bởi {p.owner?.fullName}
               {p.status === 'archived' && ' · Đã lưu trữ'}
@@ -68,6 +69,37 @@ export default function Projects() {
           </Link>
         ))}
       </div>
+    </div>
+  );
+}
+
+const STATE_LABEL = {
+  not_started: 'Chưa bắt đầu',
+  in_progress: 'Đang thực hiện',
+  completed: 'Đã hoàn thành',
+};
+
+// % hoàn thành + số việc Đã làm / Đang làm / Chuẩn bị làm, xem nhanh ngay ở danh sách dự án
+function ProjectProgress({ progress }) {
+  const {
+    total, done, doing, todo, percent, state,
+  } = progress;
+  return (
+    <div className="proj-progress">
+      <div className="row between">
+        <span className={`state-badge state-${state}`}>{STATE_LABEL[state]}</span>
+        <strong className="proj-percent">{percent}%</strong>
+      </div>
+      <div className="proj-bar" title={`${done}/${total} công việc đã xong`}>
+        <div className="seg done" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
+        <div className="seg doing" style={{ width: `${total ? (doing / total) * 100 : 0}%` }} />
+      </div>
+      <div className="proj-counts">
+        <span><i className="dot done" />Đã làm <strong>{done}</strong></span>
+        <span><i className="dot doing" />Đang làm <strong>{doing}</strong></span>
+        <span><i className="dot todo" />Chuẩn bị làm <strong>{todo}</strong></span>
+      </div>
+      {total === 0 && <small className="muted">Chưa có công việc nào</small>}
     </div>
   );
 }

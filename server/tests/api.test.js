@@ -382,6 +382,28 @@ describe('Giao một công việc cho nhiều người', () => {
   });
 });
 
+describe('Tiến độ dự án ở danh sách dự án', () => {
+  test('mỗi dự án có % hoàn thành và số việc Đã làm / Đang làm / Chuẩn bị làm', async () => {
+    const created = await request(app).post('/api/projects').set(as(leader)).send({ name: 'Dự án đếm tiến độ' });
+    const pid = created.body.id;
+    const meId = (await request(app).get('/api/auth/me').set(as(leader))).body.id;
+    const mk = (title) => request(app).post(`/api/projects/${pid}/tasks`).set(as(leader)).send({ title, assigneeIds: [meId] });
+    const t1 = (await mk('A')).body.id;
+    await mk('B');
+    await mk('C');
+    await request(app).patch(`/api/tasks/${t1}/move`).set(as(leader)).send({ status: 'in_progress' });
+
+    let list = await request(app).get('/api/projects').set(as(leader));
+    let p = list.body.find((x) => x.id === pid);
+    expect(p.progress).toMatchObject({ total: 3, done: 0, doing: 1, todo: 2, percent: 0, state: 'in_progress' });
+
+    const empty = (await request(app).post('/api/projects').set(as(leader)).send({ name: 'Dự án trống' })).body.id;
+    list = await request(app).get('/api/projects').set(as(leader));
+    p = list.body.find((x) => x.id === empty);
+    expect(p.progress).toMatchObject({ total: 0, percent: 0, state: 'not_started' });
+  });
+});
+
 describe('Mời thành viên', () => {
   test('mời nhiều email: người có tài khoản vào ngay, người chưa có tự vào khi đăng ký', async () => {
     await register('Có sẵn', 'san@test.local');

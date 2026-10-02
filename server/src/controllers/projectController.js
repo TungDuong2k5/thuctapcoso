@@ -16,12 +16,36 @@ async function list(req, res) {
   const projects = req.user.systemRole === 'admin'
     ? await Project.findAll({ where, include: [{ model: User, as: 'owner', attributes: memberAttrs }], order: [['id', 'DESC']] })
     : await req.user.getProjects({ where, include: [{ model: User, as: 'owner', attributes: memberAttrs }], order: [['id', 'DESC']] });
+  // Đếm số công việc theo trạng thái của tất cả dự án trong 1 truy vấn
+  const counts = projects.length ? await Task.findAll({
+    where: { projectId: projects.map((p) => p.id) },
+    attributes: ['projectId', 'status', [sequelize.fn('COUNT', sequelize.col('id')), 'n']],
+    group: ['projectId', 'status'],
+    raw: true,
+  }) : [];
+
   res.json(projects.map((p) => {
     const json = p.toJSON();
     json.myRole = json.ProjectMember?.role || 'leader';
     delete json.ProjectMember;
+    json.progress = projectProgress(counts.filter((c) => c.projectId === p.id));
     return json;
   }));
+}
+
+// % hoàn thành + số việc Đã làm (Done) / Đang làm (In progress, Review) / Chuẩn bị làm (To do)
+function projectProgress(rows) {
+  const by = Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
+  const done = by.done || 0;
+  const doing = (by.in_progress || 0) + (by.review || 0);
+  const todo = by.todo || 0;
+  const total = done + doing + todo;
+  let state = 'not_started';
+  if (total > 0 && done === total) state = 'completed';
+  else if (done + doing > 0) state = 'in_progress';
+  return {
+    total, done, doing, todo, percent: total ? Math.round((done / total) * 100) : 0, state,
+  };
 }
 
 async function create(req, res) {

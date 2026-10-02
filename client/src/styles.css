@@ -312,3 +312,20 @@ body::before {
 .auth-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
 .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .google-btn { display: flex; justify-content: center; min-height: 44px; margin-bottom: 8px; }
+
+/* Tiến độ dự án ở danh sách dự án */
+.proj-progress { margin: 10px 0; padding: 10px 12px; background: rgba(248, 250, 252, 0.8); border: 1px solid var(--border); border-radius: 10px; }
+.proj-percent { font-size: 20px; color: var(--primary); }
+.proj-bar { display: flex; height: 10px; border-radius: 999px; background: #e2e8f0; overflow: hidden; margin: 6px 0 8px; }
+.proj-bar .seg.done { background: var(--ok); }
+.proj-bar .seg.doing { background: #f59e0b; }
+.proj-counts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+.proj-counts strong { color: var(--text); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.dot.done { background: var(--ok); }
+.dot.doing { background: #f59e0b; }
+.dot.todo { background: #cbd5e1; }
+.state-badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.state-not_started { background: #f1f5f9; color: #475569; }
+.state-in_progress { background: #fef3c7; color: #92400e; }
+.state-completed { background: #dcfce7; color: #166534; }
