@@ -1,0 +1,41 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: taskflow
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-taskflow123}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+
+  api:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      JWT_SECRET: ${JWT_SECRET:-doi-chuoi-nay-khi-trien-khai-that}
+      DB_DIALECT: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: taskflow
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-taskflow123}
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      - db
+
+  web:
+    build: ./client
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  db_data:
+  uploads:
