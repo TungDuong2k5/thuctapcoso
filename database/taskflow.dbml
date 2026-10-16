@@ -1,0 +1,177 @@
+// TaskFlow - sơ đồ CSDL dạng DBML
+// Dán toàn bộ nội dung file này vào https://dbdiagram.io (mục "Create your diagram")
+// để xem / chỉnh / xuất ERD dạng PNG, PDF hoặc SQL.
+
+Project TaskFlow {
+  database_type: 'MySQL'
+  Note: 'Hệ thống quản lý và báo cáo công việc nhóm'
+}
+
+Table users {
+  id int [pk, increment]
+  full_name varchar(100) [not null]
+  email varchar(150) [unique]
+  password_hash varchar(255) [not null, note: 'mật khẩu đã mã hóa bcrypt']
+  system_role varchar [default: 'user', note: 'admin | user']
+  is_active boolean [default: true]
+  student_code varchar(20) [note: 'MSSV']
+  class_name varchar(50)
+  phone varchar(15)
+  date_of_birth date
+  bio varchar(500)
+  google_id varchar(64) [note: 'đăng nhập bằng Google']
+  has_password boolean [default: true]
+  reset_token_hash varchar(64) [note: 'link đặt lại mật khẩu admin tạo']
+  reset_token_expires datetime
+  password_changed_at datetime
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'Tài khoản người dùng'
+}
+
+Table projects {
+  id int [pk, increment]
+  name varchar(150) [not null]
+  description text
+  start_date date
+  end_date date
+  status varchar [default: 'active', note: 'active | archived']
+  owner_id int [ref: > users.id]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'Dự án / nhóm làm việc'
+}
+
+Table project_members {
+  project_id int [ref: > projects.id]
+  user_id int [ref: > users.id]
+  role varchar [default: 'member', note: 'leader | member']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  indexes {
+    (project_id, user_id) [pk]
+  }
+  Note: 'Thành viên dự án (nhiều - nhiều users - projects)'
+}
+
+Table project_invitations {
+  id int [pk, increment]
+  project_id int [ref: > projects.id]
+  invited_by int [ref: > users.id]
+  email varchar(150) [not null]
+  role varchar [default: 'member']
+  token varchar(64) [unique, not null]
+  status varchar [default: 'pending', note: 'pending | accepted | cancelled']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'Lời mời tham gia dự án qua email / link'
+}
+
+Table tasks {
+  id int [pk, increment]
+  project_id int [ref: > projects.id]
+  creator_id int [ref: > users.id]
+  assignee_id int [ref: > users.id, note: 'người làm đầu tiên (tương thích dữ liệu cũ)']
+  title varchar(200) [not null]
+  description text
+  status varchar [default: 'todo', note: 'todo | in_progress | review | done']
+  priority varchar [default: 'medium', note: 'low | medium | high']
+  due_date date
+  position int [default: 0]
+  progress int [default: 0]
+  submitted_at datetime [note: 'lần gửi báo cáo gần nhất']
+  completed_at datetime
+  reminded_soon_for date
+  overdue_reminded_on date
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'Công việc trên bảng Kanban'
+}
+
+Table task_assignees {
+  task_id int [ref: > tasks.id]
+  user_id int [ref: > users.id]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  indexes {
+    (task_id, user_id) [pk]
+  }
+  Note: 'Người được giao công việc (nhiều - nhiều tasks - users)'
+}
+
+Table attachments {
+  id int [pk, increment]
+  task_id int [ref: > tasks.id]
+  uploader_id int [ref: > users.id]
+  original_name varchar(255) [not null]
+  stored_name varchar(255) [not null]
+  mime_type varchar(150)
+  size int
+  note varchar(500)
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'File nộp kèm báo cáo công việc'
+}
+
+Table task_reviews {
+  id int [pk, increment]
+  task_id int [ref: > tasks.id]
+  reviewer_id int [ref: > users.id]
+  decision varchar [not null, note: 'comment | approve | reject']
+  good_points text [note: 'phần làm tốt']
+  improvements text [note: 'phần cần bổ sung / hoàn thiện']
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'Nhận xét bài ở cột Review'
+}
+
+Table comments {
+  id int [pk, increment]
+  task_id int [ref: > tasks.id]
+  user_id int [ref: > users.id]
+  content text [not null]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}
+
+Table activity_logs {
+  id int [pk, increment]
+  task_id int [ref: > tasks.id]
+  user_id int [ref: > users.id]
+  action varchar(50) [not null]
+  detail varchar(255)
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  Note: 'Lịch sử thay đổi công việc'
+}
+
+Table weekly_reports {
+  id int [pk, increment]
+  project_id int [ref: > projects.id]
+  user_id int [ref: > users.id]
+  reviewed_by int [ref: > users.id]
+  week_start date [not null]
+  done_text text
+  plan_text text
+  issues_text text
+  status varchar [default: 'draft', note: 'draft | submitted | reviewed']
+  feedback text
+  score float
+  created_at datetime [not null]
+  updated_at datetime [not null]
+  indexes {
+    (project_id, user_id, week_start) [unique]
+  }
+  Note: 'Báo cáo tuần (mỗi người 1 báo cáo / tuần / dự án)'
+}
+
+Table notifications {
+  id int [pk, increment]
+  user_id int [ref: > users.id]
+  type varchar(50) [not null]
+  message varchar(255) [not null]
+  link varchar(255)
+  is_read boolean [default: false]
+  created_at datetime [not null]
+  updated_at datetime [not null]
+}

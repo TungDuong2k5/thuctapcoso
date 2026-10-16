@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { errMsg } from '../api/client';
 import GoogleButton from '../components/GoogleButton';
+import Intro from '../components/Intro';
 
 export default function Login() {
   const { user, login, loginWithGoogle } = useAuth();
@@ -13,6 +14,8 @@ export default function Login() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Hiện phần giới thiệu trước; mở từ link mời (có ?next=) thì vào thẳng form đăng nhập
+  const [showIntro, setShowIntro] = useState(!params.get('next'));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -40,14 +43,22 @@ export default function Login() {
 
   if (user) return <Navigate to={next} replace />;
 
+  if (showIntro) {
+    return (
+      <div className="auth-page">
+        <Intro onLogin={() => setShowIntro(false)} />
+      </div>
+    );
+  }
+
   return (
     <div className="auth-page">
-      <form className="card auth-card" onSubmit={submit}>
-        <h1>TaskFlow</h1>
+      <form className="card auth-card auth-enter" onSubmit={submit}>
+        <img src="/logo.png" alt="TaskFlow" className="auth-logo" />
         <p className="muted">Quản lý và báo cáo công việc nhóm</p>
         {error && <div className="alert">{error}</div>}
         <label>Email
-          <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          <input type="email" required autoComplete="username" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </label>
         <label>Mật khẩu
           <input type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />

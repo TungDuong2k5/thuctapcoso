@@ -1,7 +1,7 @@
 const { Project, ProjectMember } = require('../models');
 const { HttpError } = require('../utils/http');
 
-// Trả về vai trò của user trong dự án ('leader' | 'member'), hoặc báo lỗi 403/404.
+// Trả về vai trò của user trong dự án ('leader' | 'member' | 'guest'), hoặc báo lỗi 403/404.
 // Admin hệ thống được xem như trưởng nhóm ở mọi dự án.
 async function getRole(projectId, user) {
   const project = await Project.findByPk(projectId);
@@ -18,10 +18,16 @@ async function requireLeader(projectId, user) {
   return role;
 }
 
+// Khách (guest) chỉ được xem: không tạo / sửa / bình luận / gửi bài
+function assertCanEdit(role) {
+  if (role === 'guest') throw new HttpError(403, 'Bạn là khách của dự án này nên chỉ được xem');
+}
+
 async function assertMember(projectId, userId) {
   if (!userId) return;
   const membership = await ProjectMember.findOne({ where: { projectId, userId } });
   if (!membership) throw new HttpError(400, 'Người được giao không thuộc dự án');
+  if (membership.role === 'guest') throw new HttpError(400, 'Không thể giao việc cho khách (chỉ xem)');
 }
 
 async function leaderIds(projectId) {
@@ -29,4 +35,6 @@ async function leaderIds(projectId) {
   return leaders.map((l) => l.userId);
 }
 
-module.exports = { getRole, requireLeader, assertMember, leaderIds };
+module.exports = {
+  getRole, requireLeader, assertMember, assertCanEdit, leaderIds,
+};

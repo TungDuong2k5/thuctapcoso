@@ -1,4 +1,6 @@
+const { Op } = require('sequelize');
 const { Notification } = require('../models');
+const { URGENT_TYPES } = require('../services/deadlines');
 
 async function list(req, res) {
   const items = await Notification.findAll({
@@ -7,7 +9,13 @@ async function list(req, res) {
     limit: 30,
   });
   const unread = await Notification.count({ where: { userId: req.user.id, isRead: false } });
-  res.json({ items, unread });
+  // Thông báo khẩn chưa đọc (trễ / hết hạn hôm nay) để giao diện bật cửa sổ cảnh báo
+  const urgent = await Notification.findAll({
+    where: { userId: req.user.id, isRead: false, type: { [Op.in]: URGENT_TYPES } },
+    order: [['id', 'DESC']],
+    limit: 20,
+  });
+  res.json({ items, unread, urgent });
 }
 
 async function markRead(req, res) {

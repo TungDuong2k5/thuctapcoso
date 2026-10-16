@@ -5,7 +5,7 @@ theo dõi tiến độ, nộp và duyệt báo cáo tuần, nhận thông báo t
 
 ## Công nghệ
 
-- **Backend:** NodeJS, Express, Sequelize (MySQL hoặc SQLite), JWT, Socket.IO
+- **Backend:** NodeJS, Express, Sequelize (SQL Server, MySQL hoặc SQLite), JWT, Socket.IO
 - **Frontend:** ReactJS 18 (Vite), React Router, Axios, socket.io-client
 - **Triển khai:** Docker, Docker Compose, Nginx
 - **Kiểm thử:** Jest, Supertest
@@ -43,7 +43,6 @@ Mở http://localhost:8080.
 
 | Email | Vai trò |
 | --- | --- |
-| admin@taskflow.local | Quản trị hệ thống |
 | an@taskflow.local | Trưởng nhóm dự án mẫu |
 | binh@taskflow.local | Thành viên |
 | chi@taskflow.local | Thành viên |
@@ -66,6 +65,17 @@ Bật nút này (làm 1 lần, miễn phí):
 4. Chép **Client ID** → bấm đúp `cau-hinh-google.bat` và dán vào → khởi động lại `chay-du-an.bat`.
 
 Quên mật khẩu: đăng nhập bằng Google, hoặc nhờ admin bấm **Link đặt lại MK** ở trang Quản trị.
+
+## Dùng SQL Server
+
+App có thể lưu dữ liệu thẳng vào SQL Server (xem trực tiếp bằng SSMS):
+
+1. Trong SSMS: chuột phải server → Properties → Security → chọn *SQL Server and Windows Authentication mode* → Restart.
+2. SQL Server Configuration Manager → Protocols for MSSQLSERVER → bật **TCP/IP**, IPAll: TCP Port `1433` → Restart.
+3. Tạo database `TaskFlow` và một tài khoản SQL có quyền `db_owner` trên database đó, điền `MSSQL_*` trong `server/.env`, đặt `DB_DIALECT=mssql`.
+4. Chuyển dữ liệu đang có từ SQLite sang: `node scripts/migrate-sqlite-to-mssql.js` (tạo lại bảng trong TaskFlow rồi chép dữ liệu).
+
+Chạy test trên SQL Server (database riêng `TaskFlow_Test`, không đụng dữ liệu thật): `set TEST_DB=mssql && npm test`.
 
 ## Chạy test
 

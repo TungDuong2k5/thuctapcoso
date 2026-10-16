@@ -12,6 +12,15 @@ if (dialect === 'mysql') {
     timezone: '+07:00',
     logging: false,
   });
+} else if (dialect === 'mssql') {
+  // SQL Server: đăng nhập bằng tài khoản SQL riêng của app (MSSQL_* trong .env), kết nối qua TCP
+  sequelize = new Sequelize(process.env.MSSQL_DB || 'TaskFlow', process.env.MSSQL_USER, process.env.MSSQL_PASSWORD, {
+    host: process.env.MSSQL_HOST || '127.0.0.1',
+    port: Number(process.env.MSSQL_PORT) || 1433,
+    dialect: 'mssql',
+    logging: false,
+    dialectOptions: { options: { encrypt: false, trustServerCertificate: true } },
+  });
 } else {
   const storage = process.env.DB_STORAGE === ':memory:'
     ? ':memory:'

@@ -1,59 +1,34 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import api, { errMsg, getSocket } from '../api/client';
+import api, { errMsg } from '../api/client';
 import TaskModal from './TaskModal';
 import { useAuth } from '../context/AuthContext';
-import AssigneePicker, { assigneeNames } from './AssigneePicker';
+import { assigneeNames } from './AssigneePicker';
+import { LabelChips } from './LabelPicker';
 import Avatar from './Avatar';
+import useTasks from '../hooks/useTasks';
+import {
+  COLUMNS, LOCKED, isOverdue, viDate, formatDeadline, isUrgentTask, lateLabel, taskPercent, taskPace,
+} from './taskMeta';
 
-export const COLUMNS = [
-  { key: 'todo', label: 'To do' },
-  { key: 'in_progress', label: 'In progress' },
-  { key: 'review', label: 'Review' },
-  { key: 'done', label: 'Done' },
-];
-export const PRIORITY_LABEL = { low: 'Thấp', medium: 'Vừa', high: 'Cao' };
-// Hai cột chỉ vào được bằng nút (Gửi báo cáo / Đạt), không kéo thả tay
-export const LOCKED = ['review', 'done'];
+// Giữ export cũ để các file khác vẫn import từ './Board' được
+export {
+  COLUMNS, LOCKED, todayISO, isOverdue, viDate,
+} from './taskMeta';
 
-const today = () => new Date().toISOString().slice(0, 10);
+const NO_FILTER = {
+  q: '', assigneeId: '', labelId: '', priority: '',
+};
 
-export default function Board({ project, isLeader }) {
+// Màn hình chính của dự án: bảng Kanban (tạo việc, danh sách, lịch... nằm trong menu ☰)
+export default function Board({ project, isLeader, isGuest }) {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState([]);
-  const [filter, setFilter] = useState({ q: '', assigneeId: '' });
-  const [newTask, setNewTask] = useState({ title: '', assigneeIds: [], priority: 'medium', dueDate: '' });
+  const [filter, setFilter] = useState(NO_FILTER);
+  const { tasks, reload: load } = useTasks(project.id, filter);
   const [dragId, setDragId] = useState(null);
   const [error, setError] = useState('');
   const [params, setParams] = useSearchParams();
   const openTaskId = params.get('task');
-
-  const load = useCallback(() => {
-    const query = {};
-    if (filter.q) query.q = filter.q;
-    if (filter.assigneeId) query.assigneeId = filter.assigneeId;
-    api.get(`/projects/${project.id}/tasks`, { params: query }).then((res) => setTasks(res.data));
-  }, [project.id, filter]);
-
-  useEffect(() => { load(); }, [load]);
-
-  // Người khác thay đổi task → tải lại bảng ngay
-  useEffect(() => {
-    const socket = getSocket();
-    socket.on('task:changed', load);
-    return () => socket.off('task:changed', load);
-  }, [load]);
-
-  const create = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post(`/projects/${project.id}/tasks`, newTask);
-      setNewTask({ ...newTask, title: '', dueDate: '', assigneeIds: [] });
-      load();
-    } catch (err) {
-      setError(errMsg(err));
-    }
-  };
 
   const drop = async (status, position) => {
     if (!dragId) return;
@@ -84,41 +59,45 @@ export default function Board({ project, isLeader }) {
     load();
   };
 
-  const openTask = (id) => setParams(id ? { task: id } : {});
+  // Đóng chi tiết công việc thì đóng luôn khung nhắn riêng
+  const openTask = (id) => setParams((p) => {
+    const next = new URLSearchParams(p);
+    if (id) next.set('task', id);
+    else { next.delete('task'); next.delete('dm'); }
+    return next;
+  });
+  const workers = project.members.filter((m) => m.role !== 'guest');
+  // Thành viên chỉ thấy việc của mình; trưởng nhóm theo dõi tiến độ cả nhóm
+  const isMember = !isLeader && !isGuest;
+  const hasFilter = Object.values(filter).some(Boolean);
 
   return (
     <div>
       <div className="toolbar">
-        <form className="row" onSubmit={create}>
-          <input placeholder="Tên công việc mới..." required value={newTask.title} onChange={(e) => setNewTask({ ...newTask, title: e.target.value })} />
-          <AssigneePicker
-            members={project.members}
-            value={newTask.assigneeIds}
-            onChange={(ids) => setNewTask({ ...newTask, assigneeIds: ids })}
-            placeholder="Giao cho... (chọn được nhiều người)"
-          />
-          <select value={newTask.priority} onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}>
-            {Object.entries(PRIORITY_LABEL).map(([k, v]) => <option key={k} value={k}>Ưu tiên {v}</option>)}
-          </select>
-          <input type="date" value={newTask.dueDate} onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })} />
-          <button type="submit" className="btn primary">Thêm</button>
-        </form>
         <div className="row">
-          <input placeholder="Tìm kiếm..." value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} />
-          <select value={filter.assigneeId} onChange={(e) => setFilter({ ...filter, assigneeId: e.target.value })}>
-            <option value="">Tất cả mọi người</option>
-            <option value="none">Chưa giao</option>
-            {project.members.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+          <input placeholder="🔍 Tìm công việc..." value={filter.q} onChange={(e) => setFilter({ ...filter, q: e.target.value })} />
+          {!isMember && (
+            <select value={filter.assigneeId} onChange={(e) => setFilter({ ...filter, assigneeId: e.target.value })}>
+              <option value="">Mọi người</option>
+              <option value="none">Chưa giao</option>
+              {workers.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+            </select>
+          )}
+          <select value={filter.labelId} onChange={(e) => setFilter({ ...filter, labelId: e.target.value })}>
+            <option value="">Mọi nhãn</option>
+            {(project.labels || []).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
+          <label className="check urgent-check">
+            <input type="checkbox" checked={filter.priority === 'urgent'} onChange={(e) => setFilter({ ...filter, priority: e.target.checked ? 'urgent' : '' })} />
+            Chỉ việc khẩn cấp
+          </label>
+          {hasFilter && <button type="button" className="link" onClick={() => setFilter(NO_FILTER)}>Bỏ lọc</button>}
         </div>
       </div>
       {error && <div className="alert">{error}</div>}
-      <p className="muted small">
-        Quy trình: bấm <strong>Bắt đầu</strong> → In progress · <strong>Gửi báo cáo</strong> kèm file → tự sang Review ·
-        bài thành viên do trưởng nhóm nhận xét, bài trưởng nhóm do các thành viên nhận xét → Đạt (Done) hoặc Chưa đạt (làm lại).
-      </p>
-      <PendingReviews tasks={tasks} members={project.members} me={user} isLeader={isLeader} onOpen={openTask} />
 
+      {isMember && <p className="muted small">Bạn đang xem <strong>công việc của mình</strong>.</p>}
+      {!isGuest && <PendingReviews tasks={tasks} members={project.members} me={user} isLeader={isLeader} onOpen={openTask} />}
       <div className="board">
         {COLUMNS.map((col) => {
           const items = tasks.filter((t) => t.status === col.key);
@@ -133,48 +112,90 @@ export default function Board({ project, isLeader }) {
                 <span>{col.label}{LOCKED.includes(col.key) && <small className="lock" title="Vào bằng nút Gửi báo cáo / Đạt"> 🔒</small>}</span>
                 <span className="muted">{items.length}</span>
               </div>
-              {items.map((t, index) => {
-                const overdue = t.status !== 'done' && t.dueDate && t.dueDate < today();
-                return (
-                  <div
-                    key={t.id}
-                    className={`task-card ${dragId === t.id ? 'dragging' : ''}`}
-                    draggable
-                    onDragStart={() => setDragId(t.id)}
-                    onDragEnd={() => setDragId(null)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => { e.stopPropagation(); drop(col.key, index); }}
-                    onClick={() => openTask(t.id)}
-                  >
-                    <div className="task-title">{t.title}</div>
-                    <div className="task-meta">
-                      <span className={`prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>
-                      {t.dueDate && <span className={overdue ? 'overdue' : 'muted'}>{overdue ? 'Quá hạn ' : 'Hạn '}{t.dueDate}</span>}
-                    </div>
-                    <div className="row between muted small">
-                      <span className="card-assignees" title={(t.assignees || []).map((a) => a.fullName).join(', ')}>
-                        {(t.assignees || []).slice(0, 3).map((a) => <Avatar key={a.id} name={a.fullName} size={20} />)}
-                        <span>{assigneeNames(t)}</span>
-                      </span>
-                      {t.attachments?.length > 0 && <span title="Số file đã nộp">📎 {t.attachments.length}</span>}
-                    </div>
-                  </div>
-                );
-              })}
+              {items.map((t, index) => (
+                <TaskCard
+                  key={t.id}
+                  task={t}
+                  dragging={dragId === t.id}
+                  draggable={!isGuest}
+                  onDragStart={() => setDragId(t.id)}
+                  onDragEnd={() => setDragId(null)}
+                  onDrop={() => drop(col.key, index)}
+                  onOpen={() => openTask(t.id)}
+                />
+              ))}
             </div>
           );
         })}
       </div>
 
       {openTaskId && (
-        <TaskModal taskId={openTaskId} project={project} isLeader={isLeader} onClose={() => openTask(null)} onChanged={load} />
+        <TaskModal
+          taskId={openTaskId}
+          project={project}
+          isLeader={isLeader}
+          isGuest={isGuest}
+          onClose={() => openTask(null)}
+          onChanged={load}
+        />
       )}
     </div>
   );
 }
 
+function TaskCard({
+  task: t, dragging, draggable, onDragStart, onDragEnd, onDrop, onOpen,
+}) {
+  const overdue = isOverdue(t);
+  const late = lateLabel(t);
+  return (
+    <div
+      className={`task-card ${isUrgentTask(t) ? 'prio-border-urgent' : ''} ${dragging ? 'dragging' : ''}`}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => { e.stopPropagation(); onDrop(); }}
+      onClick={onOpen}
+    >
+      <LabelChips labels={t.labels} />
+      <div className="task-title">{t.title}</div>
+      <div className="task-meta">
+        {isUrgentTask(t) && <span className="prio urgent">🚨 Khẩn cấp</span>}
+        {(t.startDate || t.dueDate) && (
+          <span className={overdue ? 'overdue' : 'muted'} title="Bắt đầu → Hạn nộp">
+            {overdue && 'Quá hạn '}
+            {t.startDate && !t.dueDate && `Từ ${viDate(t.startDate).slice(0, 5)}`}
+            {t.startDate && t.dueDate && `${viDate(t.startDate).slice(0, 5)} → `}
+            {t.dueDate && formatDeadline(t, true)}
+          </span>
+        )}
+      </div>
+      {['in_progress', 'review'].includes(t.status) && (
+        <div className="card-progress" title="Mức hoàn thành">
+          <div className="mp-bar"><div className={`fill tone-${taskPace(t)}`} style={{ width: `${taskPercent(t)}%` }} /></div>
+          <small>{taskPercent(t)}%</small>
+        </div>
+      )}
+      {late && <div className="late-badge">⏱ {late}</div>}
+      <div className="row between muted small">
+        <span className="card-assignees" title={(t.assignees || []).map((a) => a.fullName).join(', ')}>
+          {(t.assignees || []).slice(0, 3).map((a) => <Avatar key={a.id} name={a.fullName} src={a.avatarUrl} size={20} />)}
+          <span>{assigneeNames(t)}</span>
+        </span>
+        <span className="row" style={{ gap: 8 }}>
+          {t.dmUnread > 0 && <span className="dm-card-badge" title={`${t.dmUnread} tin nhắn riêng chưa đọc`}>💬 {t.dmUnread}</span>}
+          {t.attachments?.length > 0 && <span title="Số file đã nộp">📎 {t.attachments.length}</span>}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Các bài đang ở Review mà mình là người nhận xét
-function PendingReviews({ tasks, members, me, isLeader, onOpen }) {
+function PendingReviews({
+  tasks, members, me, isLeader, onOpen,
+}) {
   const roleOf = (id) => members.find((m) => m.id === id)?.role;
   const pending = tasks.filter((t) => {
     const ids = (t.assignees || []).map((a) => a.id);

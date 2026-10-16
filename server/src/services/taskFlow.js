@@ -10,7 +10,7 @@ const { Op } = require('sequelize');
 const {
   sequelize, Task, ActivityLog, ProjectMember,
 } = require('../models');
-const { notify } = require('./notify');
+const { notify, resolveUrgent } = require('./notify');
 const { getAssigneeIds, setAssignees } = require('./assignees');
 const { emitToProject } = require('../sockets');
 const { HttpError } = require('../utils/http');
@@ -42,12 +42,13 @@ async function hasLeaderAssignee(task, ids) {
 async function reviewerIds(task) {
   const ids = await getAssigneeIds(task);
   const members = await ProjectMember.findAll({ where: { projectId: task.projectId } });
-  const others = members.filter((m) => !ids.includes(m.userId));
+  const others = members.filter((m) => !ids.includes(m.userId) && m.role !== 'guest');
   const leaderTask = await hasLeaderAssignee(task, ids);
   return others.filter((m) => (leaderTask ? true : m.role === 'leader')).map((m) => m.userId);
 }
 
 async function canReview(task, user, role) {
+  if (role === 'guest') return false;
   const ids = await getAssigneeIds(task);
   if (ids.includes(user.id)) return false; // không tự nhận xét bài mình làm
   if (await hasLeaderAssignee(task, ids)) return true;
@@ -103,6 +104,8 @@ async function changeStatus(task, status, actor, position) {
   });
   if (autoAssign) await setAssignees(task, [actor.id]);
   emitToProject(task.projectId, 'task:changed', { id: task.id });
+  // Đã nộp bài hoặc đã xong → thông báo khẩn về việc này tự tắt
+  if (['review', 'done'].includes(status)) await resolveUrgent({ taskId: task.id });
   return oldStatus;
 }
 

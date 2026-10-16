@@ -30,8 +30,8 @@ async function seed() {
   await sequelize.sync({ force: true });
   const passwordHash = await bcrypt.hash('123456', 10);
 
-  const [admin, an, binh, chi] = await User.bulkCreate([
-    { fullName: 'Quản trị viên', email: 'admin@taskflow.local', passwordHash, systemRole: 'admin' },
+  // Không có tài khoản quản trị chung: ai tạo dự án thì là trưởng nhóm (quản trị) của dự án đó
+  const [an, binh, chi] = await User.bulkCreate([
     { fullName: 'Nguyễn Văn An', email: 'an@taskflow.local', passwordHash },
     { fullName: 'Trần Thị Bình', email: 'binh@taskflow.local', passwordHash },
     { fullName: 'Lê Minh Chi', email: 'chi@taskflow.local', passwordHash },
@@ -90,7 +90,7 @@ async function seed() {
   });
 
   console.log('Đã tạo dữ liệu mẫu. Mật khẩu mọi tài khoản: 123456');
-  console.log([admin, an, binh, chi].map((u) => `  ${u.email}`).join('\n'));
+  console.log([an, binh, chi].map((u) => `  ${u.email}`).join('\n'));
   await sequelize.close();
 }
 

@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "seed": "node src/seed.js",
     "test": "jest --runInBand",
-    "setup-google": "node scripts/setup-google.js"
+    "setup-google": "node scripts/setup-google.js",
+    "export-sqlserver": "node scripts/export-sqlserver.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -21,7 +22,8 @@
     "mysql2": "^3.11.0",
     "sequelize": "^6.37.3",
     "socket.io": "^4.7.5",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "tedious": "^18.6.2"
   },
   "devDependencies": {
     "jest": "^29.7.0",

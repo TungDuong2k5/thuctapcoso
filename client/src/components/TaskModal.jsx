@@ -3,8 +3,13 @@ import api, {
   downloadAttachment, errMsg, formatSize, getSocket,
 } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { COLUMNS, PRIORITY_LABEL } from './Board';
+import {
+  COLUMNS, deadlineOf, formatDeadline, lateLabel, taskPercent, taskPace,
+} from './taskMeta';
 import AssigneePicker, { assigneeNames } from './AssigneePicker';
+import LabelPicker, { LabelChips } from './LabelPicker';
+import MentionInput, { renderMentions } from './MentionInput';
+import DirectMessages from './DirectMessages';
 
 const MAX_FILES = 10;
 const MAX_MB = 25;
@@ -14,11 +19,14 @@ function fileExt(name) {
   return i > 0 ? name.slice(i + 1).toUpperCase().slice(0, 4) : 'FILE';
 }
 
-export default function TaskModal({ taskId, project, isLeader, onClose, onChanged }) {
+export default function TaskModal({
+  taskId, project, isLeader, isGuest, onClose, onChanged,
+}) {
   const { user } = useAuth();
   const [task, setTask] = useState(null);
   const [form, setForm] = useState(null);
   const [comment, setComment] = useState('');
+  const [mentions, setMentions] = useState([]);
   const [files, setFiles] = useState([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -33,7 +41,14 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
         const t = res.data;
         setTask(t);
         setForm({
-          title: t.title, description: t.description || '', priority: t.priority, dueDate: t.dueDate || '', assigneeIds: (t.assignees || []).map((a) => a.id),
+          title: t.title,
+          description: t.description || '',
+          priority: t.priority,
+          startDate: t.startDate || '',
+          dueDate: t.dueDate || '',
+          dueTime: t.dueTime || '',
+          assigneeIds: (t.assignees || []).map((a) => a.id),
+          labelIds: (t.labels || []).map((l) => l.id),
         });
       })
       .catch((err) => setError(errMsg(err)));
@@ -105,6 +120,21 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
     }
   };
 
+  // Người làm kéo thanh "Mức hoàn thành" (10–90%), thả tay là lưu
+  const [progressDraft, setProgressDraft] = useState(null);
+  const saveProgress = async (value) => {
+    setError('');
+    try {
+      await api.put(`/tasks/${taskId}`, { progress: value });
+      onChanged();
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setProgressDraft(null);
+    }
+  };
+
   const startWork = async () => {
     setError('');
     try {
@@ -168,22 +198,35 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
   const send = async (e) => {
     e.preventDefault();
     if (!comment.trim()) return;
-    await api.post(`/tasks/${taskId}/comments`, { content: comment });
-    setComment('');
-    load();
+    setError('');
+    // chỉ gửi những người còn được @nhắc trong nội dung
+    const mentionIds = mentions.filter((m) => comment.includes(`@${m.fullName}`)).map((m) => m.id);
+    try {
+      await api.post(`/tasks/${taskId}/comments`, { content: comment, mentionIds });
+      setComment('');
+      setMentions([]);
+      load();
+    } catch (err) {
+      setError(errMsg(err));
+    }
   };
 
-  const canDelete = task && (isLeader || task.creatorId === user.id);
+
+  const readOnly = !!isGuest;
+  const canDelete = task && !readOnly && (isLeader || task.creatorId === user.id);
+  const pastDeadline = task?.dueDate && deadlineOf(task) < new Date();
+  const late = task ? lateLabel(task) : '';
+  const others = project.members.filter((m) => m.id !== user.id);
   const isDone = task?.status === 'done';
   // Người làm: người được giao (việc chưa giao thì ai bấm Bắt đầu sẽ nhận việc)
   const assigneeIds = task ? (task.assignees || []).map((a) => a.id) : [];
   const isWorker = task && (assigneeIds.length ? assigneeIds.includes(user.id) : true);
-  const canWork = task && ['todo', 'in_progress'].includes(task.status) && isWorker;
+  const canWork = task && !readOnly && ['todo', 'in_progress'].includes(task.status) && isWorker;
   // Bài thành viên → trưởng nhóm nhận xét; bài trưởng nhóm → các thành viên khác nhận xét
   const leaderWorks = assigneeIds.some((id) => project.members.find((m) => m.id === id)?.role === 'leader');
-  const canReview = task && task.status === 'review' && !assigneeIds.includes(user.id) && (leaderWorks || isLeader);
+  const canReview = task && !readOnly && task.status === 'review' && !assigneeIds.includes(user.id) && (leaderWorks || isLeader);
   const reviewerLabel = leaderWorks ? 'các thành viên' : 'trưởng nhóm';
-  const waitingFor = task && !isWorker && ['todo', 'in_progress'].includes(task.status);
+  const waitingFor = task && (!isWorker || readOnly) && ['todo', 'in_progress'].includes(task.status);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -195,9 +238,23 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
           <>
             <div className="row between">
               <span className={`tag status-${task.status}`}>{COLUMNS.find((c) => c.key === task.status)?.label}</span>
-              <button type="button" className="btn ghost" onClick={onClose}>Đóng</button>
+              <div className="row">
+                <DirectMessages task={task} readOnly={readOnly} />
+                <button type="button" className="btn ghost" onClick={onClose}>Đóng</button>
+              </div>
             </div>
-            <input className="title-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            <input className="title-input" disabled={readOnly} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+            <LabelChips labels={task.labels} small={false} />
+            {task.dueDate && (
+              <div className={`deadline-line ${pastDeadline && !['done', 'review'].includes(task.status) ? 'overdue' : ''}`}>
+                ⏰ Hạn nộp: <strong>{task.dueTime || '23:59'} ngày {formatDeadline({ dueDate: task.dueDate })}</strong>
+                {pastDeadline && !['done', 'review'].includes(task.status) && ' — ĐÃ QUÁ HẠN'}
+                {task.submittedAt && (late
+                  ? <span className="late-badge">⏱ {late}</span>
+                  : <span className="ontime-badge">✓ Nộp đúng hạn</span>)}
+              </div>
+            )}
+            {readOnly && <div className="status-banner">Bạn là <strong>khách</strong> của dự án này nên chỉ được xem.</div>}
 
             {task.status === 'todo' && canWork && (
               <div className="status-banner">
@@ -257,6 +314,40 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
               </div>
             )}
 
+            {/* Mức hoàn thành: người làm tự cập nhật khi đang In progress */}
+            <div className="task-progress">
+              <div className="row between">
+                <strong>Mức hoàn thành</strong>
+                <strong className={`tone-text-${taskPace(task)}`}>{progressDraft ?? taskPercent(task)}%</strong>
+              </div>
+              <div className="mp-bar"><div className={`fill tone-${taskPace(task)}`} style={{ width: `${progressDraft ?? taskPercent(task)}%` }} /></div>
+              {canWork && task.status === 'in_progress' ? (
+                <>
+                  <input
+                    type="range"
+                    min={10}
+                    max={90}
+                    step={5}
+                    value={progressDraft ?? taskPercent(task)}
+                    onChange={(e) => setProgressDraft(Number(e.target.value))}
+                    onMouseUp={(e) => saveProgress(Number(e.target.value))}
+                    onTouchEnd={(e) => saveProgress(Number(e.target.value))}
+                    onKeyUp={(e) => saveProgress(Number(e.target.value))}
+                  />
+                  <small className="muted">Kéo để báo bạn đã làm được bao nhiêu (tối đa 90%). Gửi báo cáo → 90%, được duyệt Đạt → 100%.</small>
+                </>
+              ) : (
+                <small className="muted">
+                  {{
+                    todo: 'Chưa bắt đầu (0%).',
+                    in_progress: 'Người làm đang cập nhật mức hoàn thành.',
+                    review: 'Đã nộp bài, chờ nhận xét (90%).',
+                    done: 'Đã được duyệt Đạt (100%).',
+                  }[task.status]}
+                </small>
+              )}
+            </div>
+
             {/* Gửi báo cáo (chỉ khi đang In progress) → tự sang Review */}
             {canWork && task.status === 'in_progress' && (
               <div
@@ -265,6 +356,9 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
                 onDrop={(e) => { e.preventDefault(); pickFiles(e.dataTransfer.files); }}
               >
                 <strong>Gửi báo cáo (bắt buộc kèm file) → tự chuyển sang Review</strong>
+                {pastDeadline && (
+                  <div className="alert small">Đã quá hạn nộp ({formatDeadline(task)}). Bạn vẫn gửi được nhưng bài sẽ bị ghi <strong>Nộp muộn</strong>.</div>
+                )}
                 <p className="muted small">
                   Kéo thả file vào đây hoặc bấm chọn. Nhận Word, PDF, Excel, PowerPoint, ảnh, zip/rar, mã nguồn…
                   (tối đa {MAX_FILES} file, mỗi file {MAX_MB}MB).
@@ -305,7 +399,7 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
                       {att.note && ` · "${att.note}"`}
                     </div>
                   </div>
-                  {(att.uploaderId === user.id || isLeader) && (
+                  {!readOnly && (att.uploaderId === user.id || isLeader) && (
                     <button type="button" className="link danger-text" onClick={() => removeFile(att)}>Xóa</button>
                   )}
                 </li>
@@ -313,31 +407,45 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
             </ul>
 
             <h4>Thông tin</h4>
-            <div className="form-grid">
-              <label className="span2">Người làm (chọn được nhiều người)
-                <AssigneePicker
-                  members={project.members}
-                  value={form.assigneeIds}
-                  onChange={(ids) => setForm({ ...form, assigneeIds: ids })}
-                />
-              </label>
-              <label>Độ ưu tiên
-                <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                  {Object.entries(PRIORITY_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                </select>
-              </label>
-              <label>Hạn hoàn thành
-                <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
-              </label>
-              <label>Người tạo<input disabled value={task.creator?.fullName || ''} /></label>
-              <label className="span2">Mô tả
-                <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-              </label>
-            </div>
-            <div className="row end">
-              {canDelete && <button type="button" className="btn danger" onClick={remove}>Xóa công việc</button>}
-              <button type="button" className="btn primary" onClick={save}>Lưu thay đổi</button>
-            </div>
+            <fieldset className="plain" disabled={readOnly}>
+              <div className="form-grid">
+                <label className="span2">Người làm (chọn được nhiều người)
+                  <AssigneePicker
+                    members={project.members.filter((m) => m.role !== 'guest')}
+                    value={form.assigneeIds}
+                    onChange={(ids) => setForm({ ...form, assigneeIds: ids })}
+                  />
+                </label>
+                <label>Nhãn
+                  <LabelPicker labels={project.labels || []} value={form.labelIds} onChange={(ids) => setForm({ ...form, labelIds: ids })} />
+                </label>
+                <label>Mức độ
+                  <span className="check urgent-check">
+                    <input type="checkbox" checked={form.priority === 'urgent'} onChange={(e) => setForm({ ...form, priority: e.target.checked ? 'urgent' : 'medium' })} />
+                    🚨 Khẩn cấp
+                  </span>
+                </label>
+                <label>Ngày bắt đầu
+                  <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+                </label>
+                <label>Hạn nộp (ngày + giờ)
+                  <span className="row" style={{ flexWrap: 'nowrap' }}>
+                    <input type="date" className="grow" min={form.startDate || undefined} value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value, dueTime: e.target.value ? form.dueTime : '' })} />
+                    <input type="time" title="Bỏ trống = 23:59" disabled={!form.dueDate} value={form.dueTime} onChange={(e) => setForm({ ...form, dueTime: e.target.value })} />
+                  </span>
+                </label>
+                <label className="span2">Người tạo<input disabled value={task.creator?.fullName || ''} /></label>
+                <label className="span2">Mô tả
+                  <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                </label>
+              </div>
+            </fieldset>
+            {!readOnly && (
+              <div className="row end">
+                {canDelete && <button type="button" className="btn danger" onClick={remove}>Xóa công việc</button>}
+                <button type="button" className="btn primary" onClick={save}>Lưu thay đổi</button>
+              </div>
+            )}
 
             <h4>Bình luận</h4>
             <div className="comments">
@@ -345,14 +453,22 @@ export default function TaskModal({ taskId, project, isLeader, onClose, onChange
               {task.comments.map((c) => (
                 <div key={c.id} className="comment">
                   <strong>{c.author?.fullName}</strong> <small className="muted">{new Date(c.createdAt).toLocaleString('vi-VN')}</small>
-                  <div className="pre-line">{c.content}</div>
+                  <div className="pre-line">{renderMentions(c.content, project.members)}</div>
                 </div>
               ))}
             </div>
-            <form className="row" onSubmit={send}>
-              <input className="grow" placeholder="Viết bình luận..." value={comment} onChange={(e) => setComment(e.target.value)} />
-              <button type="submit" className="btn">Gửi</button>
-            </form>
+            {!readOnly && (
+              <form className="row" onSubmit={send}>
+                <MentionInput
+                  members={others}
+                  value={comment}
+                  onChange={setComment}
+                  onMention={(m) => setMentions((list) => (list.some((x) => x.id === m.id) ? list : [...list, m]))}
+                  placeholder="Viết bình luận... gõ @ để nhắc tên thành viên"
+                />
+                <button type="submit" className="btn">Gửi</button>
+              </form>
+            )}
 
             <h4>Lịch sử</h4>
             <ul className="logs">

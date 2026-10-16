@@ -1,5 +1,5 @@
 @echo off
-rem Bam dup file nay de chay TaskFlow: mo 2 cua so (API + giao dien), trinh duyet tu mo khi xong.
+rem Bam dup file nay de chay TaskFlow: mo 2 cua so (API + giao dien), Microsoft Edge tu mo khi xong.
 chcp 65001 >nul
 cd /d "%~dp0"
 
@@ -12,10 +12,6 @@ if not exist "client\node_modules" (
   call npm --prefix client install
 )
 if not exist "server\.env" copy "server\.env.example" "server\.env" >nul
-if not exist "server\data\taskflow.sqlite" (
-  echo Tao du lieu mau lan dau...
-  call npm --prefix server run seed
-)
 
 start "TaskFlow API - dung tat cua so nay" /d "%~dp0server" cmd /k npm run dev
 
@@ -27,5 +23,5 @@ for /l %%i in (1,1,30) do (
 )
 :api_ready
 
-rem --open: Vite tu mo trinh duyet dung dia chi ngay khi giao dien chay xong
-start "TaskFlow Web - dung tat cua so nay" /d "%~dp0client" cmd /k npm run dev -- --open
+rem Giao dien web chay xong se tu mo Microsoft Edge (cau hinh trong client\vite.config.js)
+start "TaskFlow Web - dung tat cua so nay" /d "%~dp0client" cmd /k npm run dev

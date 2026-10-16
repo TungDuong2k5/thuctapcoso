@@ -3,7 +3,9 @@ const path = require('path');
 const {
   Task, Attachment, ActivityLog, Comment,
 } = require('../models');
-const { getRole } = require('../services/projectAccess');
+const { assertCanEdit } = require('../services/projectAccess');
+const { assertCanSeeTask } = require('../services/visibility');
+const { lateMinutes, formatDuration, formatDeadline } = require('../utils/deadline');
 const { notify } = require('../services/notify');
 const { emitToProject } = require('../sockets');
 const { removeStoredFile, UPLOAD_DIR } = require('../middlewares/upload');
@@ -17,7 +19,8 @@ const {
 async function checkTaskAccess(req, res, next) {
   const task = await Task.findByPk(req.params.id);
   if (!task) throw new HttpError(404, 'Không tìm thấy công việc');
-  req.role = await getRole(task.projectId, req.user);
+  req.role = await assertCanSeeTask(task, req.user);
+  assertCanEdit(req.role);
   req.task = task;
   next();
 }
@@ -72,21 +75,26 @@ async function submit(req, res) {
 
     const rows = await saveFiles(req, req.body.note);
     const note = req.body.note?.trim();
+    // So với hạn nộp (ngày + giờ): quá hạn vẫn nhận bài nhưng ghi "Nộp muộn"
+    const now = new Date();
+    const late = lateMinutes(task, now);
+    const lateText = late ? ` — NỘP MUỘN ${formatDuration(late)} (hạn ${formatDeadline(task)})` : '';
     await Comment.create({
       taskId: task.id,
       userId: req.user.id,
-      content: `Đã gửi báo cáo (${rows.length} file: ${rows.map((r) => r.originalName).join(', ')})${note ? `
+      content: `Đã gửi báo cáo (${rows.length} file: ${rows.map((r) => r.originalName).join(', ')})${lateText}${note ? `
 ${note}` : ''}`,
     });
     emitToProject(task.projectId, 'comment:new', { taskId: task.id });
 
     if (!(await getAssigneeIds(task)).length) await setAssignees(task, [req.user.id]);
-    task.submittedAt = new Date();
+    task.submittedAt = now;
+    task.submittedLateMinutes = late;
     await changeStatus(task, 'review', req.user); // tự động sang Review (lưu luôn submittedAt)
 
     await notify(await reviewerIds(task), req.user.id, {
       type: 'task_submitted',
-      message: `${req.user.fullName} đã gửi báo cáo "${task.title}" (${rows.length} file), mời bạn nhận xét`,
+      message: `${req.user.fullName} đã gửi báo cáo "${task.title}" (${rows.length} file)${late ? `, NỘP MUỘN ${formatDuration(late)}` : ' đúng hạn'}, mời bạn nhận xét`,
       link: taskLink(task),
     });
     res.status(201).json({ task, attachments: rows });
@@ -97,9 +105,9 @@ ${note}` : ''}`,
 }
 
 async function loadAttachment(id, user) {
-  const att = await Attachment.findByPk(id, { include: [{ model: Task, attributes: ['id', 'projectId', 'title'] }] });
+  const att = await Attachment.findByPk(id, { include: [{ model: Task }] });
   if (!att) throw new HttpError(404, 'Không tìm thấy file');
-  const role = await getRole(att.Task.projectId, user);
+  const role = await assertCanSeeTask(att.Task, user);
   return { att, role };
 }
 

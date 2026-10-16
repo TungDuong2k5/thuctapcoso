@@ -41,10 +41,11 @@ export default function Register() {
   return (
     <div className="auth-page">
       <form className="card auth-card" onSubmit={submit}>
+        <img src="/logo.png" alt="TaskFlow" className="auth-logo" />
         <h1>Tạo tài khoản</h1>
         {error && <div className="alert">{error}</div>}
         <label>Họ tên<input required {...field('fullName')} /></label>
-        <label>Email<input type="email" required {...field('email')} /></label>
+        <label>Email<input type="email" required autoComplete="username" {...field('email')} /></label>
         <label>Mật khẩu (tối thiểu 6 ký tự)<input type="password" required minLength={6} {...field('password')} /></label>
         <button type="submit" className="btn primary">Đăng ký</button>
         <GoogleButton onCredential={google} text="signup_with" />

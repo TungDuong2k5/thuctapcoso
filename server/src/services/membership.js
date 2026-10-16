@@ -24,14 +24,22 @@ async function joinProject(projectId, user, role, actorId) {
   return true;
 }
 
-// Gọi khi đăng ký: nhận tất cả lời mời đang chờ gửi tới email này
-async function acceptPendingByEmail(user) {
-  const invites = await Invitation.findAll({ where: { email: user.email, status: 'pending' } });
+// Gọi khi tài khoản mới được tạo: báo các lời mời đang chờ gửi tới email này
+// (người dùng tự bấm Tham gia / Từ chối ở trang Dự án của tôi)
+async function notifyPendingInvites(user) {
+  if (!user.email) return 0;
+  const invites = await Invitation.findAll({
+    where: { email: user.email, status: 'pending' },
+    include: [{ model: Project, attributes: ['name'] }],
+  });
   for (const inv of invites) {
-    await joinProject(inv.projectId, user, inv.role);
-    await inv.update({ status: 'accepted' });
+    await notify(user.id, inv.invitedBy, {
+      type: 'project_invite',
+      message: `Bạn được mời tham gia dự án "${inv.Project?.name}". Bấm để Tham gia / Từ chối`,
+      link: '/',
+    });
   }
   return invites.length;
 }
 
-module.exports = { joinProject, acceptPendingByEmail };
+module.exports = { joinProject, notifyPendingInvites };

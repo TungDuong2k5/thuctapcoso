@@ -1,13 +1,18 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
 const {
-  sequelize, Project, ProjectMember, User, Invitation, Task,
+  sequelize, Project, ProjectMember, User, Invitation, Task, TaskLabel, Attachment, Label, PROJECT_ROLES,
 } = require('../models');
+const { addDefaultLabels } = require('../config/schema');
+const { removeStoredFile } = require('../middlewares/upload');
+const { emitToProject } = require('../sockets');
 const { getRole, requireLeader } = require('../services/projectAccess');
 const { joinProject } = require('../services/membership');
+const { notify, resolveUrgent } = require('../services/notify');
+const { personStats, assignedTo } = require('../services/progress');
 const { HttpError } = require('../utils/http');
 
-const memberAttrs = ['id', 'fullName', 'email'];
+const memberAttrs = ['id', 'fullName', 'email', 'avatarUrl'];
 // Thông tin hiển thị ở tab Thành viên (chỉ người trong dự án xem được)
 const profileAttrs = [...memberAttrs, 'studentCode', 'className', 'phone', 'dateOfBirth', 'bio'];
 
@@ -20,7 +25,16 @@ async function list(req, res) {
   const counts = projects.length ? await Task.findAll({
     where: { projectId: projects.map((p) => p.id) },
     attributes: ['projectId', 'status', [sequelize.fn('COUNT', sequelize.col('id')), 'n']],
-    group: ['projectId', 'status'],
+    // GROUP BY theo tên cột thật (SQL Server không cho GROUP BY theo tên rút gọn "projectId")
+    group: [sequelize.col('project_id'), sequelize.col('status')],
+    raw: true,
+  }) : [];
+
+  // Ngày xong công việc cuối cùng của từng dự án (để biết dự án xong đúng hay chậm tiến độ)
+  const lastDone = projects.length ? await Task.findAll({
+    where: { projectId: projects.map((p) => p.id), status: 'done' },
+    attributes: ['projectId', [sequelize.fn('MAX', sequelize.col('completed_at')), 'at']],
+    group: [sequelize.col('project_id')],
     raw: true,
   }) : [];
 
@@ -29,8 +43,24 @@ async function list(req, res) {
     json.myRole = json.ProjectMember?.role || 'leader';
     delete json.ProjectMember;
     json.progress = projectProgress(counts.filter((c) => c.projectId === p.id));
+    json.finish = projectFinish(json, lastDone.find((x) => x.projectId === p.id)?.at);
     return json;
   }));
+}
+
+// Dự án đã hoàn thành chưa, xong ngày nào, có chậm so với ngày kết thúc dự án không
+// (đánh dấu "Đã hoàn thành" → lấy lúc đánh dấu; mọi việc đều Done → lấy ngày xong việc cuối cùng)
+function projectFinish(project, lastDoneAt) {
+  const finished = project.status === 'archived' || project.progress.state === 'completed';
+  if (!finished) return { finished: false };
+  const at = project.status === 'archived' ? (project.completedAt || project.updatedAt) : lastDoneAt;
+  const day = at ? new Date(at).toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }) : null;
+  const lateDays = project.endDate && day && day > project.endDate
+    ? Math.round((new Date(`${day}T00:00:00Z`) - new Date(`${project.endDate}T00:00:00Z`)) / 864e5)
+    : 0;
+  return {
+    finished: true, finishedOn: day, late: lateDays > 0, lateDays,
+  };
 }
 
 // % hoàn thành + số việc Đã làm (Done) / Đang làm (In progress, Review) / Chuẩn bị làm (To do)
@@ -58,6 +88,7 @@ async function create(req, res) {
       name: name.trim(), description, startDate: startDate || null, endDate: endDate || null, ownerId: req.user.id,
     }, { transaction: t });
     await ProjectMember.create({ projectId: p.id, userId: req.user.id, role: 'leader' }, { transaction: t });
+    await addDefaultLabels(p.id, t);
     return p;
   });
   res.status(201).json(project);
@@ -69,28 +100,24 @@ async function detail(req, res) {
     include: [
       { model: User, as: 'owner', attributes: memberAttrs },
       { model: User, as: 'members', attributes: profileAttrs, through: { attributes: ['role', 'createdAt'] } },
+      { model: Label, as: 'labels', attributes: ['id', 'name', 'color'] },
     ],
+    order: [[{ model: Label, as: 'labels' }, 'id', 'ASC']],
   });
   const json = project.toJSON();
   const tasks = await Task.findAll({
     where: { projectId: project.id },
-    attributes: ['id', 'status', 'dueDate'],
+    attributes: ['id', 'status', 'progress', 'dueDate', 'dueTime', 'submittedLateMinutes'],
     include: [{ model: User, as: 'assignees', attributes: ['id'], through: { attributes: [] } }],
   });
-  const today = new Date().toISOString().slice(0, 10);
-  json.members = json.members.map(({ ProjectMember: pm, ...u }) => {
-    const mine = tasks.filter((t) => t.assignees.some((a) => a.id === u.id));
-    return {
-      ...u,
-      role: pm.role,
-      joinedAt: pm.createdAt,
-      stats: {
-        total: mine.length,
-        done: mine.filter((t) => t.status === 'done').length,
-        overdue: mine.filter((t) => t.status !== 'done' && t.dueDate && t.dueDate < today).length,
-      },
-    };
-  });
+  json.members = json.members.map(({ ProjectMember: pm, ...u }) => ({
+    ...u,
+    role: pm.role,
+    joinedAt: pm.createdAt,
+    stats: personStats(assignedTo(tasks, u.id)),
+  }));
+  // Thành viên / khách chỉ xem tiến độ của chính mình, trưởng nhóm theo dõi được tất cả
+  if (myRole !== 'leader') json.members.forEach((m) => { if (m.id !== req.user.id) delete m.stats; });
   json.myRole = myRole;
   res.json(json);
 }
@@ -103,25 +130,30 @@ async function update(req, res) {
   if (status !== undefined && !['active', 'archived'].includes(status)) throw new HttpError(400, 'Trạng thái không hợp lệ');
   const changes = { name: name?.trim(), description, startDate, endDate, status };
   Object.keys(changes).forEach((k) => changes[k] === undefined && delete changes[k]);
+  if (status === 'archived' && project.status !== 'archived') changes.completedAt = new Date();
+  if (status === 'active') changes.completedAt = null;
   await project.update(changes);
+  // Dự án đã hoàn thành → tắt mọi thông báo khẩn của dự án
+  if (status === 'archived') await resolveUrgent({ projectId: project.id });
   res.json(project);
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Trưởng nhóm nhập 1 hoặc nhiều email (cách nhau bởi dấu phẩy, khoảng trắng, xuống dòng):
-// - email đã có tài khoản → vào dự án ngay
-// - email chưa có tài khoản → tạo lời mời; người đó đăng ký bằng email này là tự vào dự án
+// Trưởng nhóm nhập 1 hoặc nhiều email (cách nhau bởi dấu phẩy, khoảng trắng, xuống dòng).
+// Mỗi email nhận một LỜI MỜI; người được mời tự bấm Tham gia hoặc Từ chối.
+// Email đã có tài khoản thì nhận thông báo ngay; chưa có thì thấy lời mời sau khi đăng ký.
 async function addMembers(req, res) {
   const projectId = Number(req.params.id);
   await requireLeader(projectId, req.user);
   const { role = 'member' } = req.body;
-  if (!['leader', 'member'].includes(role)) throw new HttpError(400, 'Vai trò không hợp lệ');
+  if (!PROJECT_ROLES.includes(role)) throw new HttpError(400, 'Vai trò không hợp lệ');
 
   const emails = [...new Set(String(req.body.emails ?? req.body.email ?? '')
     .split(/[\s,;]+/).map((e) => e.trim().toLowerCase()).filter(Boolean))];
   if (!emails.length) throw new HttpError(400, 'Vui lòng nhập ít nhất một email');
 
+  const project = await Project.findByPk(projectId);
   const results = [];
   for (const email of emails) {
     if (!EMAIL_RE.test(email)) {
@@ -131,20 +163,46 @@ async function addMembers(req, res) {
     const user = await User.findOne({ where: { email } });
     if (user && !user.isActive) {
       results.push({ email, status: 'inactive' });
-    } else if (user) {
-      const joined = await joinProject(projectId, user, role, req.user.id);
-      results.push({ email, status: joined ? 'added' : 'already' });
-    } else {
-      let invite = await Invitation.findOne({ where: { projectId, email, status: 'pending' } });
-      if (!invite) {
-        invite = await Invitation.create({
-          projectId, email, role, token: crypto.randomBytes(24).toString('hex'), invitedBy: req.user.id,
-        });
-      }
-      results.push({ email, status: 'invited', token: invite.token });
+      continue;
     }
+    if (user && await ProjectMember.findOne({ where: { projectId, userId: user.id } })) {
+      results.push({ email, status: 'already' });
+      continue;
+    }
+    const existing = await Invitation.findOne({ where: { projectId, email, status: 'pending' } });
+    if (existing) {
+      results.push({ email, status: 'already_invited', token: existing.token });
+      continue;
+    }
+    const invite = await Invitation.create({
+      projectId, email, role, token: crypto.randomBytes(24).toString('hex'), invitedBy: req.user.id,
+    });
+    if (user) {
+      await notify(user.id, req.user.id, {
+        type: 'project_invite',
+        message: `${req.user.fullName} mời bạn tham gia dự án "${project.name}". Bấm để Tham gia / Từ chối`,
+        link: '/',
+      });
+    }
+    results.push({ email, status: user ? 'invited' : 'invited_new', token: invite.token });
   }
   res.status(201).json({ results });
+}
+
+// Lời mời đang chờ của chính người đang đăng nhập (hiện ở trang Dự án của tôi)
+async function myInvitations(req, res) {
+  if (!req.user.email) return res.json([]);
+  const invites = await Invitation.findAll({
+    where: { email: req.user.email, status: 'pending' },
+    include: [
+      { model: Project, attributes: ['id', 'name', 'description'], where: { status: 'active' } },
+      { model: User, as: 'inviter', attributes: ['id', 'fullName'] },
+    ],
+    order: [['id', 'DESC']],
+  });
+  res.json(invites.map((i) => ({
+    id: i.id, token: i.token, role: i.role, createdAt: i.createdAt, project: i.Project, inviterName: i.inviter?.fullName,
+  })));
 }
 
 async function listInvitations(req, res) {
@@ -173,6 +231,7 @@ async function invitationInfo(req, res) {
   });
   if (!invite || invite.status === 'cancelled') throw new HttpError(404, 'Link mời không hợp lệ hoặc đã bị hủy');
   res.json({
+    token: invite.token,
     email: invite.email,
     role: invite.role,
     status: invite.status,
@@ -181,17 +240,39 @@ async function invitationInfo(req, res) {
   });
 }
 
-// Người đã đăng nhập bấm "Tham gia" trên trang link mời
-async function acceptInvitation(req, res) {
-  const invite = await Invitation.findOne({ where: { token: req.params.token } });
-  if (!invite || invite.status === 'cancelled') throw new HttpError(404, 'Link mời không hợp lệ hoặc đã bị hủy');
-  // Link chỉ dành cho đúng email được mời, tránh người khác bấm làm "hết hạn" lời mời
+async function loadOwnInvitation(req) {
+  const invite = await Invitation.findOne({
+    where: { token: req.params.token },
+    include: [{ model: Project, attributes: ['id', 'name'] }],
+  });
+  if (!invite || invite.status === 'cancelled') throw new HttpError(404, 'Lời mời không hợp lệ hoặc đã bị hủy');
+  // Lời mời chỉ dành cho đúng email được mời
   if (invite.email !== req.user.email) {
-    throw new HttpError(403, `Link này dành cho ${invite.email}. Bạn đang đăng nhập bằng ${req.user.email}, hãy đăng xuất rồi đăng nhập/đăng ký bằng ${invite.email}.`);
+    throw new HttpError(403, `Lời mời này dành cho ${invite.email}. Bạn đang đăng nhập bằng ${req.user.email}, hãy đăng xuất rồi đăng nhập/đăng ký bằng ${invite.email}.`);
   }
-  await joinProject(invite.projectId, req.user, invite.role);
+  if (invite.status === 'declined') throw new HttpError(400, 'Bạn đã từ chối lời mời này');
+  return invite;
+}
+
+// Bấm "Tham gia": vào dự án, báo trưởng nhóm
+async function acceptInvitation(req, res) {
+  const invite = await loadOwnInvitation(req);
+  await joinProject(invite.projectId, req.user, invite.role); // tự báo trưởng nhóm "đã tham gia"
   if (invite.status === 'pending') await invite.update({ status: 'accepted' });
   res.json({ projectId: invite.projectId });
+}
+
+// Bấm "Từ chối": hủy lời mời, báo người mời
+async function declineInvitation(req, res) {
+  const invite = await loadOwnInvitation(req);
+  if (invite.status === 'accepted') throw new HttpError(400, 'Bạn đã tham gia dự án này');
+  await invite.update({ status: 'declined' });
+  await notify(invite.invitedBy, req.user.id, {
+    type: 'invite_declined',
+    message: `${req.user.fullName} đã từ chối lời mời tham gia dự án "${invite.Project?.name}"`,
+    link: `/projects/${invite.projectId}/members`,
+  });
+  res.json({ success: true });
 }
 
 async function removeMember(req, res) {
@@ -200,6 +281,66 @@ async function removeMember(req, res) {
   if (Number(req.params.userId) === project.ownerId) throw new HttpError(400, 'Không thể xóa người tạo dự án');
   const removed = await ProjectMember.destroy({ where: { projectId: project.id, userId: req.params.userId } });
   if (!removed) throw new HttpError(404, 'Thành viên không tồn tại');
+  res.json({ success: true });
+}
+
+// Trưởng nhóm đổi vai trò: trưởng nhóm / thành viên / khách (chỉ xem)
+async function updateMemberRole(req, res) {
+  await requireLeader(req.params.id, req.user);
+  const { role } = req.body;
+  if (!PROJECT_ROLES.includes(role)) throw new HttpError(400, 'Vai trò không hợp lệ');
+  const project = await Project.findByPk(req.params.id);
+  const userId = Number(req.params.userId);
+  if (userId === project.ownerId && role !== 'leader') throw new HttpError(400, 'Người tạo dự án luôn là trưởng nhóm');
+  const membership = await ProjectMember.findOne({ where: { projectId: project.id, userId } });
+  if (!membership) throw new HttpError(404, 'Thành viên không tồn tại');
+  if (role === 'guest' && await Task.count({
+    where: {
+      projectId: project.id,
+      status: { [Op.ne]: 'done' },
+      id: { [Op.in]: sequelize.literal(`(SELECT task_id FROM task_assignees WHERE user_id = ${userId})`) },
+    },
+  })) {
+    throw new HttpError(400, 'Người này đang được giao việc chưa xong, hãy giao lại trước khi chuyển thành khách');
+  }
+  await membership.update({ role });
+  const label = { leader: 'trưởng nhóm', member: 'thành viên', guest: 'khách (chỉ xem)' }[role];
+  await notify(userId, req.user.id, {
+    type: 'role_changed',
+    message: `Vai trò của bạn trong dự án "${project.name}" đã đổi thành ${label}`,
+    link: `/projects/${project.id}`,
+  });
+  emitToProject(project.id, 'project:changed', {});
+  res.json({ success: true });
+}
+
+// Xóa hẳn dự án: chỉ người tạo (hoặc admin), phải gõ đúng tên dự án để xác nhận
+async function remove(req, res) {
+  const project = await Project.findByPk(req.params.id);
+  if (!project) throw new HttpError(404, 'Không tìm thấy dự án');
+  if (project.ownerId !== req.user.id && req.user.systemRole !== 'admin') {
+    throw new HttpError(403, 'Chỉ người tạo dự án được xóa dự án');
+  }
+  if (String(req.body?.confirmName ?? '').trim() !== project.name) {
+    throw new HttpError(400, 'Tên xác nhận không khớp với tên dự án');
+  }
+  const members = await ProjectMember.findAll({ where: { projectId: project.id } });
+  const tasks = await Task.findAll({ where: { projectId: project.id }, attributes: ['id'] });
+  const taskIds = tasks.map((t) => t.id);
+  const files = taskIds.length ? await Attachment.findAll({ where: { taskId: taskIds }, attributes: ['storedName'] }) : [];
+
+  await sequelize.transaction(async (t) => {
+    if (taskIds.length) await TaskLabel.destroy({ where: { taskId: taskIds }, transaction: t });
+    await project.destroy({ transaction: t }); // các bảng con xóa dây chuyền theo khóa ngoại
+  });
+  files.forEach((f) => removeStoredFile(f.storedName));
+
+  await notify(members.map((m) => m.userId), req.user.id, {
+    type: 'project_deleted',
+    message: `${req.user.fullName} đã xóa dự án "${project.name}"`,
+    link: '/',
+  });
+  emitToProject(project.id, 'project:deleted', { id: project.id });
   res.json({ success: true });
 }
 
@@ -221,9 +362,13 @@ module.exports = {
   update,
   addMembers,
   removeMember,
+  updateMemberRole,
+  remove,
   searchUsers,
   listInvitations,
   cancelInvitation,
   invitationInfo,
   acceptInvitation,
+  declineInvitation,
+  myInvitations,
 };

@@ -33,7 +33,7 @@ export default function AssigneePicker({ members, value, onChange, placeholder =
           {members.map((m) => (
             <label key={m.id} className="picker-option">
               <input type="checkbox" checked={value.includes(m.id)} onChange={() => toggle(m.id)} />
-              <Avatar name={m.fullName} size={24} />
+              <Avatar name={m.fullName} src={m.avatarUrl} size={24} />
               <span className="grow">{m.fullName}</span>
               {m.role === 'leader' && <small className="muted">Trưởng nhóm</small>}
             </label>

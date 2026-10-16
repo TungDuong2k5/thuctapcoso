@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>ERD TaskFlow</title>
+<style>
+  html, body { margin: 0; background: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; }
+  svg text { font-family: 'Segoe UI', Arial, sans-serif; }
+</style>
+</head>
+<body>
+<svg id="erd" xmlns="http://www.w3.org/2000/svg" width="1700" height="1010" viewBox="0 0 1700 1010"></svg>
+<script>
+// Bố cục 5 cột: [notifications, weekly_reports] | users | [5 bảng con của users & tasks] | tasks | [projects, project_members, project_invitations]
+const W = 270, HEAD = 30, ROW = 19;
+const C1 = 20, C2 = 340, C3 = 680, C4 = 1020, C5 = 1360;
+const T = {
+  notifications: { x: C1, y: 110, color: '#64748b', cols: [
+    ['id', 'INT', 'PK'], ['user_id', 'INT', 'FK'], ['type', 'VARCHAR(50)'], ['message', 'VARCHAR(255)'], ['link', 'VARCHAR(255)'],
+    ['is_read', 'BOOLEAN'], ['created_at / updated_at', 'DATETIME']] },
+  weekly_reports: { x: C1, y: 330, color: '#7c3aed', cols: [
+    ['id', 'INT', 'PK'], ['project_id', 'INT', 'FK'], ['user_id', 'INT', 'FK'], ['reviewed_by', 'INT', 'FK'], ['week_start', 'DATE'],
+    ['done_text', 'TEXT'], ['plan_text', 'TEXT'], ['issues_text', 'TEXT'], ['status', 'ENUM(draft,submitted,reviewed)'],
+    ['feedback', 'TEXT'], ['score', 'FLOAT'], ['created_at / updated_at', 'DATETIME']] },
+  users: { x: C2, y: 110, color: '#1e3a8a', cols: [
+    ['id', 'INT', 'PK'], ['full_name', 'VARCHAR(100)'], ['email', 'VARCHAR(150)', 'UQ'], ['password_hash', 'VARCHAR(255)'],
+    ['system_role', 'ENUM(admin,user)'], ['is_active', 'BOOLEAN'], ['student_code', 'VARCHAR(20)'], ['class_name', 'VARCHAR(50)'],
+    ['phone', 'VARCHAR(15)'], ['date_of_birth', 'DATE'], ['bio', 'VARCHAR(500)'], ['google_id', 'VARCHAR(64)'],
+    ['has_password', 'BOOLEAN'], ['reset_token_hash', 'VARCHAR(64)'], ['reset_token_expires', 'DATETIME'],
+    ['password_changed_at', 'DATETIME'], ['created_at / updated_at', 'DATETIME']] },
+  task_assignees: { x: C3, y: 110, color: '#047857', cols: [
+    ['task_id', 'INT', 'PK,FK'], ['user_id', 'INT', 'PK,FK'], ['created_at / updated_at', 'DATETIME']] },
+  attachments: { x: C3, y: 222, color: '#b45309', cols: [
+    ['id', 'INT', 'PK'], ['task_id', 'INT', 'FK'], ['uploader_id', 'INT', 'FK'], ['original_name', 'VARCHAR(255)'],
+    ['stored_name', 'VARCHAR(255)'], ['mime_type', 'VARCHAR(150)'], ['size', 'INT'], ['note', 'VARCHAR(500)'],
+    ['created_at / updated_at', 'DATETIME']] },
+  task_reviews: { x: C3, y: 448, color: '#b45309', cols: [
+    ['id', 'INT', 'PK'], ['task_id', 'INT', 'FK'], ['reviewer_id', 'INT', 'FK'], ['decision', 'ENUM(comment,approve,reject)'],
+    ['good_points', 'TEXT'], ['improvements', 'TEXT'], ['created_at / updated_at', 'DATETIME']] },
+  comments: { x: C3, y: 636, color: '#b45309', cols: [
+    ['id', 'INT', 'PK'], ['task_id', 'INT', 'FK'], ['user_id', 'INT', 'FK'], ['content', 'TEXT'], ['created_at / updated_at', 'DATETIME']] },
+  activity_logs: { x: C3, y: 786, color: '#b45309', cols: [
+    ['id', 'INT', 'PK'], ['task_id', 'INT', 'FK'], ['user_id', 'INT', 'FK'], ['action', 'VARCHAR(50)'], ['detail', 'VARCHAR(255)'],
+    ['created_at / updated_at', 'DATETIME']] },
+  tasks: { x: C4, y: 300, color: '#047857', cols: [
+    ['id', 'INT', 'PK'], ['project_id', 'INT', 'FK'], ['creator_id', 'INT', 'FK'], ['assignee_id', 'INT', 'FK'], ['title', 'VARCHAR(200)'],
+    ['description', 'TEXT'], ['status', 'ENUM(todo,in_progress,review,done)'], ['priority', 'ENUM(low,medium,high)'],
+    ['due_date', 'DATE'], ['position', 'INT'], ['progress', 'INT'], ['submitted_at', 'DATETIME'], ['completed_at', 'DATETIME'],
+    ['reminded_soon_for', 'DATE'], ['overdue_reminded_on', 'DATE'], ['created_at / updated_at', 'DATETIME']] },
+  projects: { x: C5, y: 110, color: '#0369a1', cols: [
+    ['id', 'INT', 'PK'], ['name', 'VARCHAR(150)'], ['description', 'TEXT'], ['start_date', 'DATE'], ['end_date', 'DATE'],
+    ['status', 'ENUM(active,archived)'], ['owner_id', 'INT', 'FK'], ['created_at / updated_at', 'DATETIME']] },
+  project_members: { x: C5, y: 330, color: '#0369a1', cols: [
+    ['project_id', 'INT', 'PK,FK'], ['user_id', 'INT', 'PK,FK'], ['role', 'ENUM(leader,member)'], ['created_at / updated_at', 'DATETIME']] },
+  project_invitations: { x: C5, y: 462, color: '#0369a1', cols: [
+    ['id', 'INT', 'PK'], ['project_id', 'INT', 'FK'], ['invited_by', 'INT', 'FK'], ['email', 'VARCHAR(150)'],
+    ['role', 'ENUM(leader,member)'], ['token', 'VARCHAR(64)', 'UQ'], ['status', 'ENUM(pending,accepted,cancelled)'],
+    ['created_at / updated_at', 'DATETIME']] },
+};
+const rowY = (t, col) => {
+  const i = T[t].cols.findIndex((c) => c[0] === col);
+  if (i < 0) throw new Error(`${t}.${col}`);
+  return T[t].y + HEAD + ROW * i + ROW / 2;
+};
+const L = (t) => T[t].x; // cạnh trái
+const R = (t) => T[t].x + W; // cạnh phải
+const COLORS = { users: '#1e3a8a', projects: '#0369a1', tasks: '#047857' };
+
+// Mỗi quan hệ: bảng cha (phía 1) -> bảng con (phía N), đi theo các điểm gấp khúc (chỉ đi trong khe trống giữa các cột / hành lang)
+const rels = [];
+const rel = (parent, child, pts) => rels.push({ parent, child, pts });
+
+// Khe giữa cột 1 và 2 (users / projects -> notifications, weekly_reports)
+rel('users', 'notifications', [[L('users'), rowY('users', 'id')], [318, null], [null, rowY('notifications', 'user_id')], [R('notifications'), null]]);
+rel('users', 'weekly_reports', [[L('users'), rowY('users', 'id')], [308, null], [null, rowY('weekly_reports', 'user_id')], [R('weekly_reports'), null]]);
+rel('users', 'weekly_reports', [[L('users'), rowY('users', 'id')], [298, null], [null, rowY('weekly_reports', 'reviewed_by')], [R('weekly_reports'), null]]);
+// projects -> weekly_reports: đi xuống hành lang dưới cùng rồi sang trái
+rel('projects', 'weekly_reports', [[L('projects'), rowY('projects', 'id')], [1340, null], [null, 965], [328, null], [null, rowY('weekly_reports', 'project_id')], [R('weekly_reports'), null]]);
+
+// Khe giữa cột 2 và 3: users -> 5 bảng con
+const uLane = [622, 630, 638, 646, 654];
+[['task_assignees', 'user_id'], ['attachments', 'uploader_id'], ['task_reviews', 'reviewer_id'], ['comments', 'user_id'], ['activity_logs', 'user_id']]
+  .forEach(([t, c], i) => rel('users', t, [[R('users'), rowY('users', 'id')], [uLane[i], null], [null, rowY(t, c)], [L(t), null]]));
+// Khe giữa cột 3 và 4: tasks -> 5 bảng con
+const tLane = [1004, 996, 988, 980, 972];
+['task_assignees', 'attachments', 'task_reviews', 'comments', 'activity_logs']
+  .forEach((t, i) => rel('tasks', t, [[L('tasks'), rowY('tasks', 'id')], [tLane[i], null], [null, rowY(t, 'task_id')], [R(t), null]]));
+
+// users -> tasks (người tạo, người làm chính): vòng qua hành lang phía trên cột 3
+rel('users', 'tasks', [[R('users'), rowY('users', 'id')], [662, null], [null, 98], [1012, null], [null, rowY('tasks', 'creator_id')], [L('tasks'), null]]);
+rel('users', 'tasks', [[R('users'), rowY('users', 'id')], [670, null], [null, 92], [1008, null], [null, rowY('tasks', 'assignee_id')], [L('tasks'), null]]);
+// users -> projects / project_members / project_invitations: hành lang phía trên rồi xuống khe giữa cột 4 và 5
+rel('users', 'projects', [[R('users'), rowY('users', 'id')], [614, null], [null, 86], [1312, null], [null, rowY('projects', 'owner_id')], [L('projects'), null]]);
+rel('users', 'project_members', [[R('users'), rowY('users', 'id')], [606, null], [null, 80], [1320, null], [null, rowY('project_members', 'user_id')], [L('project_members'), null]]);
+rel('users', 'project_invitations', [[R('users'), rowY('users', 'id')], [598, null], [null, 74], [1328, null], [null, rowY('project_invitations', 'invited_by')], [L('project_invitations'), null]]);
+// projects -> tasks
+rel('projects', 'tasks', [[L('projects'), rowY('projects', 'id')], [1300, null], [null, rowY('tasks', 'project_id')], [R('tasks'), null]]);
+// projects -> project_members / project_invitations: đi dọc mép phải
+rel('projects', 'project_members', [[R('projects'), rowY('projects', 'id')], [1648, null], [null, rowY('project_members', 'project_id')], [R('project_members'), null]]);
+rel('projects', 'project_invitations', [[R('projects'), rowY('projects', 'id')], [1660, null], [null, rowY('project_invitations', 'project_id')], [R('project_invitations'), null]]);
+
+const svg = document.getElementById('erd');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, text) => {
+  const e = document.createElementNS(NS, tag);
+  Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, v));
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+
+// Vẽ đường nối trước để bảng nằm đè lên trên
+const gLines = el('g', {});
+svg.appendChild(gLines);
+rels.forEach(({ parent, pts }) => {
+  // điền tọa độ còn thiếu (null = giữ nguyên theo điểm trước)
+  const P = [];
+  pts.forEach(([x, y], i) => P.push([x ?? P[i - 1][0], y ?? P[i - 1][1]]));
+  const color = COLORS[parent];
+  gLines.appendChild(el('polyline', {
+    points: P.map((p) => p.join(',')).join(' '), fill: 'none', stroke: color, 'stroke-width': 1.4, opacity: 0.85, 'stroke-linejoin': 'round',
+  }));
+  // nhãn 1 (đầu bảng cha) và N (đầu bảng con), đặt phía ngoài cạnh bảng
+  const [a, b] = [P[0], P[1]];
+  const [y, z] = [P[P.length - 1], P[P.length - 2]];
+  const out = (p, q) => (q[0] > p[0] ? 4 : -12);
+  gLines.appendChild(el('text', { x: a[0] + out(a, b), y: a[1] - 4, 'font-size': 11.5, 'font-weight': 700, fill: color }, '1'));
+  gLines.appendChild(el('text', { x: y[0] + out(y, z), y: y[1] - 4, 'font-size': 11.5, 'font-weight': 700, fill: color }, 'N'));
+});
+
+// Các bảng
+Object.entries(T).forEach(([name, t]) => {
+  const h = HEAD + ROW * t.cols.length;
+  const g = el('g', {});
+  g.appendChild(el('rect', { x: t.x + 3, y: t.y + 3, width: W, height: h, rx: 6, fill: '#0f172a', opacity: 0.07 }));
+  g.appendChild(el('rect', { x: t.x, y: t.y, width: W, height: h, rx: 6, fill: '#ffffff', stroke: t.color, 'stroke-width': 1.5 }));
+  g.appendChild(el('path', { d: `M${t.x} ${t.y + HEAD} V${t.y + 6} a6 6 0 0 1 6 -6 H${t.x + W - 6} a6 6 0 0 1 6 6 V${t.y + HEAD} Z`, fill: t.color }));
+  g.appendChild(el('text', { x: t.x + W / 2, y: t.y + 20, 'text-anchor': 'middle', 'font-size': 14, 'font-weight': 700, fill: '#ffffff' }, name));
+  t.cols.forEach(([c, type, key], i) => {
+    const y = t.y + HEAD + ROW * i;
+    if (i % 2 === 1) g.appendChild(el('rect', { x: t.x + 1.5, y, width: W - 3, height: ROW, fill: '#f1f5f9' }));
+    const isPK = key && key.includes('PK');
+    const isFK = key && key.includes('FK');
+    if (key) g.appendChild(el('text', { x: t.x + 8, y: y + 13.5, 'font-size': 9.5, 'font-weight': 700, fill: isPK ? '#b45309' : (isFK ? '#2563eb' : '#7c3aed') }, key));
+    g.appendChild(el('text', {
+      x: t.x + 50, y: y + 13.5, 'font-size': 12, fill: '#0f172a', 'font-weight': isPK ? 700 : 400, 'text-decoration': isPK ? 'underline' : 'none',
+    }, c));
+    g.appendChild(el('text', { x: t.x + W - 8, y: y + 13.5, 'text-anchor': 'end', 'font-size': 10.5, fill: '#64748b' }, type));
+  });
+  svg.appendChild(g);
+});
+
+// Tiêu đề + chú thích
+svg.appendChild(el('text', { x: 20, y: 30, 'font-size': 20, 'font-weight': 700, fill: '#0f172a' }, 'Sơ đồ thực thể liên kết (ERD) - Hệ thống TaskFlow'));
+svg.appendChild(el('text', { x: 20, y: 52, 'font-size': 12.5, fill: '#475569' },
+  'PK: khóa chính · FK: khóa ngoại · UQ: duy nhất · 1 — N: quan hệ một - nhiều · project_members, task_assignees: bảng trung gian của quan hệ nhiều - nhiều'));
+[['#1e3a8a', 'Quan hệ từ bảng users'], ['#0369a1', 'Quan hệ từ bảng projects'], ['#047857', 'Quan hệ từ bảng tasks']].forEach(([c, t], i) => {
+  const x = 20 + i * 210, y = 995;
+  svg.appendChild(el('line', { x1: x, y1: y - 4, x2: x + 28, y2: y - 4, stroke: c, 'stroke-width': 2.2 }));
+  svg.appendChild(el('text', { x: x + 36, y, 'font-size': 12.5, fill: '#334155' }, t));
+});
+</script>
+</body>
+</html>

@@ -34,7 +34,7 @@ async function start() {
   const server = http.createServer(app);
   initSocket(server);
   server.listen(PORT, () => console.log(`TaskFlow API chạy tại http://localhost:${PORT}`));
-  startDeadlineScheduler(); // kiểm tra hạn ngay khi chạy và mỗi 30 phút
+  startDeadlineScheduler(5); // kiểm tra hạn ngay khi chạy và mỗi 5 phút
 }
 
 start().catch((err) => {

@@ -1,18 +1,36 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api, { errMsg } from '../api/client';
+import PendingInvitations from '../components/PendingInvitations';
 
 const empty = { name: '', description: '', startDate: '', endDate: '' };
+const ROLE = { leader: 'Trưởng nhóm', member: 'Thành viên', guest: 'Khách' };
+const viDate = (d) => (d ? d.split('-').reverse().join('/') : '?');
+
+// Dự án đã hoàn thành: trưởng nhóm đánh dấu hoàn thành, hoặc mọi công việc đều đã Done
+const isFinished = (p) => p.status === 'archived' || p.progress?.state === 'completed';
+
+const GROUPS = {
+  mine: {
+    icon: '👑', title: 'Dự án của tôi', hint: 'Dự án bạn làm trưởng nhóm', empty: 'Bạn chưa làm trưởng nhóm dự án nào. Bấm “+ Dự án mới” để tạo.',
+  },
+  joined: {
+    icon: '🤝', title: 'Dự án đã tham gia', hint: 'Dự án bạn là thành viên', empty: 'Bạn chưa tham gia dự án nào của người khác. Lời mời tham gia sẽ hiện ở trang Dự án.',
+  },
+};
 
 export default function Projects() {
-  const [projects, setProjects] = useState([]);
-  const [showArchived, setShowArchived] = useState(false);
+  const [projects, setProjects] = useState(null);
   const [form, setForm] = useState(empty);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  // ?nhom=mine | joined (chọn ở thanh bên trái); mặc định là Dự án của tôi
+  const [params] = useSearchParams();
+  const group = GROUPS[params.get('nhom')] ? params.get('nhom') : 'mine';
 
-  const load = () => api.get('/projects', { params: { archived: showArchived ? 1 : 0 } }).then((res) => setProjects(res.data));
-  useEffect(() => { load(); }, [showArchived]);
+  // Lấy cả dự án đã hoàn thành (lưu trữ) để chia nhóm Đang làm / Đã hoàn thành
+  const load = () => api.get('/projects', { params: { archived: 1 } }).then((res) => setProjects(res.data));
+  useEffect(() => { load(); }, []);
 
   const create = async (e) => {
     e.preventDefault();
@@ -26,16 +44,20 @@ export default function Projects() {
     }
   };
 
+  const lists = {
+    mine: (projects || []).filter((p) => p.myRole === 'leader'),
+    joined: (projects || []).filter((p) => p.myRole !== 'leader'),
+  };
+
   return (
     <div>
+      <PendingInvitations onJoined={load} />
       <div className="page-head">
-        <h2>Dự án của tôi</h2>
-        <div className="row">
-          <label className="check">
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Hiện dự án đã lưu trữ
-          </label>
-          <button type="button" className="btn primary" onClick={() => setCreating(!creating)}>+ Dự án mới</button>
+        <div>
+          <h2>{GROUPS[group].icon} {GROUPS[group].title} {projects && <span className="count-pill">{lists[group].length}</span>}</h2>
+          <small className="muted">{GROUPS[group].hint}</small>
         </div>
+        <button type="button" className="btn primary" onClick={() => setCreating(!creating)}>+ Dự án mới</button>
       </div>
 
       {creating && (
@@ -52,54 +74,49 @@ export default function Projects() {
         </form>
       )}
 
-      {projects.length === 0 && <p className="muted">Bạn chưa tham gia dự án nào. Hãy tạo dự án mới hoặc nhờ trưởng nhóm thêm bạn vào.</p>}
-      <div className="project-grid">
-        {projects.map((p) => (
-          <Link key={p.id} to={`/projects/${p.id}`} className="card project-card">
-            <div className="row between">
-              <h3>{p.name}</h3>
-              <span className={`tag ${p.myRole}`}>{p.myRole === 'leader' ? 'Trưởng nhóm' : 'Thành viên'}</span>
-            </div>
-            <p className="muted">{p.description || 'Không có mô tả'}</p>
-            {p.progress && <ProjectProgress progress={p.progress} />}
-            <small className="muted">
-              {p.startDate || '?'} → {p.endDate || '?'} · Tạo bởi {p.owner?.fullName}
-              {p.status === 'archived' && ' · Đã lưu trữ'}
-            </small>
-          </Link>
-        ))}
-      </div>
+      {projects === null && <p className="muted">Đang tải...</p>}
+      {projects && <ProjectSection key={group} {...GROUPS[group]} items={lists[group]} />}
     </div>
   );
 }
 
-const STATE_LABEL = {
-  not_started: 'Chưa bắt đầu',
-  in_progress: 'Đang thực hiện',
-  completed: 'Đã hoàn thành',
-};
+// Một phần (Dự án của tôi / Dự án đã tham gia), chia 2 nhóm Đang làm và Đã hoàn thành
+function ProjectSection({ items, empty }) {
+  const [tab, setTab] = useState('doing');
+  const doing = items.filter((p) => !isFinished(p));
+  const done = items.filter(isFinished);
+  const shown = tab === 'doing' ? doing : done;
 
-// % hoàn thành + số việc Đã làm / Đang làm / Chuẩn bị làm, xem nhanh ngay ở danh sách dự án
-function ProjectProgress({ progress }) {
-  const {
-    total, done, doing, todo, percent, state,
-  } = progress;
   return (
-    <div className="proj-progress">
-      <div className="row between">
-        <span className={`state-badge state-${state}`}>{STATE_LABEL[state]}</span>
-        <strong className="proj-percent">{percent}%</strong>
+    <section className="project-section">
+      <div className="row project-section-head">
+        <div className="view-switch" role="tablist">
+          <button type="button" className={tab === 'doing' ? 'active' : ''} onClick={() => setTab('doing')}>🚧 Đang làm ({doing.length})</button>
+          <button type="button" className={tab === 'done' ? 'active' : ''} onClick={() => setTab('done')}>✅ Đã hoàn thành ({done.length})</button>
+        </div>
       </div>
-      <div className="proj-bar" title={`${done}/${total} công việc đã xong`}>
-        <div className="seg done" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
-        <div className="seg doing" style={{ width: `${total ? (doing / total) * 100 : 0}%` }} />
+
+      {items.length === 0 && <p className="muted small">{empty}</p>}
+      {items.length > 0 && shown.length === 0 && (
+        <p className="muted small">{tab === 'doing' ? 'Không có dự án nào đang làm.' : 'Chưa có dự án nào hoàn thành.'}</p>
+      )}
+      <div className="project-grid">
+        {shown.map((p) => (
+          <Link key={p.id} to={`/projects/${p.id}`} className={`card project-card ${isFinished(p) ? (p.finish?.late ? 'finished late' : 'finished ontime') : ''}`}>
+            <div className="row between">
+              <h3>{p.name}</h3>
+              <span className={`tag ${p.myRole}`}>{ROLE[p.myRole]}</span>
+            </div>
+            <p className="muted">{p.description || 'Không có mô tả'}</p>
+            {isFinished(p) && (p.finish?.late
+              ? <span className="finished-badge late" title={`Kết thúc dự án: ${viDate(p.endDate)} · Hoàn thành: ${viDate(p.finish.finishedOn)}`}>⚠ Hoàn thành chậm tiến độ ({p.finish.lateDays} ngày)</span>
+              : <span className="finished-badge" title={p.finish?.finishedOn ? `Hoàn thành ngày ${viDate(p.finish.finishedOn)}` : ''}>✅ Hoàn thành đúng tiến độ</span>)}
+            <small className="muted">
+              {viDate(p.startDate)} → {viDate(p.endDate)} · Tạo bởi {p.owner?.fullName}
+            </small>
+          </Link>
+        ))}
       </div>
-      <div className="proj-counts">
-        <span><i className="dot done" />Đã làm <strong>{done}</strong></span>
-        <span><i className="dot doing" />Đang làm <strong>{doing}</strong></span>
-        <span><i className="dot todo" />Chuẩn bị làm <strong>{todo}</strong></span>
-      </div>
-      {total === 0 && <small className="muted">Chưa có công việc nào</small>}
-    </div>
+    </section>
   );
 }

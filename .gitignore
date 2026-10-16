@@ -7,3 +7,9 @@ server/data/
 server/uploads/
 server/tests/tmp-uploads/
 .vscode/
+
+# Visual Studio
+server/.vs/
+# Bản sao dữ liệu thật (email, mật khẩu đã mã hóa) – không đưa lên GitHub
+database/taskflow_sqlserver.sql
+database/taskflow_mysql.sql

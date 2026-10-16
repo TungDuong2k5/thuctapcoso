@@ -46,6 +46,7 @@ export default function ResetPassword() {
   return (
     <div className="auth-page">
       <form className="card auth-card" onSubmit={submit}>
+        <img src="/logo.png" alt="TaskFlow" className="auth-logo" />
         <h1>Tạo mật khẩu mới</h1>
 
         {linkError && (

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import api, { errMsg } from '../api/client';
+import { useRef, useState } from 'react';
+import api, { errMsg, formatPhone } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import Avatar from '../components/Avatar';
 
@@ -15,6 +15,42 @@ export default function Profile() {
   const [pw, setPw] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+
+  const fileInput = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Ảnh đại diện: JPG/PNG/WEBP/GIF, tối đa 2MB
+  const uploadAvatar = async (file) => {
+    if (!file) return;
+    setError('');
+    setMessage('');
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Ảnh tối đa 2MB');
+      return;
+    }
+    const data = new FormData();
+    data.append('avatar', file);
+    setUploading(true);
+    try {
+      const res = await api.post('/users/me/avatar', data);
+      setUser(res.data);
+      setMessage('Đã cập nhật ảnh đại diện');
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    try {
+      const res = await api.delete('/users/me/avatar');
+      setUser(res.data);
+      setMessage('Đã xóa ảnh đại diện');
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
 
   const field = (key) => ({ value: form[key], onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
 
@@ -54,10 +90,17 @@ export default function Profile() {
   return (
     <div className="profile-page">
       <div className="card profile-head">
-        <Avatar name={form.fullName || user.fullName} size={72} />
+        <div className="avatar-edit">
+          <Avatar name={form.fullName || user.fullName} src={user.avatarUrl} size={84} />
+          <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(e) => { uploadAvatar(e.target.files[0]); e.target.value = ''; }} />
+          <button type="button" className="link small" disabled={uploading} onClick={() => fileInput.current.click()}>
+            {uploading ? 'Đang tải…' : 'Đổi ảnh'}
+          </button>
+          {user.avatarUrl && <button type="button" className="link small danger-text" onClick={removeAvatar}>Xóa ảnh</button>}
+        </div>
         <div>
           <h2>{user.fullName}</h2>
-          <div className="muted">{user.email}</div>
+          <div className="muted">{[user.email, formatPhone(user.phone)].filter(Boolean).join(' · ')}</div>
           <div className="muted small">
             {[user.studentCode && `MSSV ${user.studentCode}`, user.className && `Lớp ${user.className}`].filter(Boolean).join(' · ')
               || 'Hãy bổ sung MSSV và lớp để trưởng nhóm, giảng viên dễ nhận ra bạn'}
@@ -80,7 +123,7 @@ export default function Profile() {
           <label className="span2">Giới thiệu / kỹ năng
             <textarea rows={3} maxLength={500} placeholder="VD: Mạnh về React, thiết kế giao diện; phụ trách frontend" {...field('bio')} />
           </label>
-          <label className="span2">Email<input disabled value={user.email} /></label>
+          <label className="span2">Email<input disabled value={user.email || ''} /></label>
         </div>
         <div className="row end"><button type="submit" className="btn primary">Lưu thông tin</button></div>
       </form>

@@ -3,39 +3,52 @@ const { User } = require('../models');
 const { signToken } = require('../middlewares/auth');
 const { HttpError } = require('../utils/http');
 const { Op } = require('sequelize');
-const { acceptPendingByEmail } = require('../services/membership');
+const { notifyPendingInvites } = require('../services/membership');
 const crypto = require('crypto');
 const { hashToken } = require('../services/passwordReset');
+const { normalizePhone, EMAIL_RE } = require('../utils/phone');
 const google = require('../services/googleAuth');
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 async function register(req, res) {
-  const { fullName, email, password } = req.body;
+  const { fullName, password } = req.body;
+  const email = String(req.body.email || '').trim().toLowerCase();
   if (!fullName?.trim()) throw new HttpError(400, 'Vui lòng nhập họ tên');
-  if (!EMAIL_RE.test(email || '')) throw new HttpError(400, 'Email không hợp lệ');
+  if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Email không hợp lệ');
   if ((password || '').length < 6) throw new HttpError(400, 'Mật khẩu tối thiểu 6 ký tự');
-  if (await User.findOne({ where: { email: email.toLowerCase() } })) throw new HttpError(400, 'Email đã được sử dụng');
+  if (await User.findOne({ where: { email } })) throw new HttpError(400, 'Email đã được sử dụng');
 
   const user = await User.create({
     fullName: fullName.trim(),
-    email: email.toLowerCase(),
+    email,
     passwordHash: await bcrypt.hash(password, 10),
   });
-  // Ai đã được mời bằng email này thì tự vào các dự án đó
-  const joinedProjects = await acceptPendingByEmail(user);
-  res.status(201).json({ token: signToken(user), user, joinedProjects });
+  // Có lời mời gửi tới email này từ trước → báo để người dùng chọn Tham gia / Từ chối
+  const pendingInvitations = await notifyPendingInvites(user);
+  res.status(201).json({ token: signToken(user), user, pendingInvitations });
 }
 
+// Tối đa 10 lần đăng nhập sai cho mỗi email trong 15 phút (chống dò mật khẩu khi web mở ra Internet)
+const loginFailures = new Map();
+const LOGIN_LIMIT = 10;
+const LOGIN_WINDOW = 15 * 60 * 1000;
+
 async function login(req, res) {
-  const { email, password } = req.body;
-  const user = await User.findOne({ where: { email: (email || '').toLowerCase() } });
+  const { password } = req.body;
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const fail = loginFailures.get(email);
+  if (fail && fail.until > Date.now() && fail.count >= LOGIN_LIMIT) {
+    throw new HttpError(429, 'Đăng nhập sai quá nhiều lần, vui lòng thử lại sau 15 phút');
+  }
+  const user = email ? await User.findOne({ where: { email } }) : null;
   if (user && user.hasPassword === false) {
     throw new HttpError(400, 'Tài khoản này đăng nhập bằng Google. Hãy bấm "Đăng nhập bằng Google" (hoặc đặt mật khẩu trong Hồ sơ).');
   }
   if (!user || !(await bcrypt.compare(password || '', user.passwordHash))) {
+    if (!fail || fail.until < Date.now()) loginFailures.set(email, { count: 1, until: Date.now() + LOGIN_WINDOW });
+    else fail.count += 1;
     throw new HttpError(400, 'Email hoặc mật khẩu không đúng');
   }
+  loginFailures.delete(email);
   if (!user.isActive) throw new HttpError(403, 'Tài khoản đã bị khóa');
   res.json({ token: signToken(user), user });
 }
@@ -47,7 +60,6 @@ async function me(req, res) {
 const PROFILE_FIELDS = {
   studentCode: { max: 20, label: 'MSSV' },
   className: { max: 50, label: 'Lớp' },
-  phone: { max: 15, label: 'Số điện thoại', pattern: /^\+?[0-9 .-]{9,15}$/ },
   bio: { max: 500, label: 'Giới thiệu' },
 };
 
@@ -65,6 +77,12 @@ async function updateMe(req, res) {
     if (value.length > rule.max) throw new HttpError(400, `${rule.label} tối đa ${rule.max} ký tự`);
     if (value && rule.pattern && !rule.pattern.test(value)) throw new HttpError(400, `${rule.label} không hợp lệ`);
     req.user[key] = value || null;
+  }
+  if (req.body.phone !== undefined) {
+    const raw = String(req.body.phone || '').trim();
+    const phone = raw ? normalizePhone(raw) : null;
+    if (raw && !phone) throw new HttpError(400, 'Số điện thoại không hợp lệ (VD: 0912345678)');
+    req.user.phone = phone;
   }
   if (dateOfBirth !== undefined) {
     if (dateOfBirth && (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || dateOfBirth > new Date().toISOString().slice(0, 10))) {
@@ -117,9 +135,8 @@ async function googleLogin(req, res) {
     });
     created = true;
   }
-  // Ai đã được mời bằng email này thì tự vào các dự án đó
-  const joinedProjects = created ? await acceptPendingByEmail(user) : 0;
-  res.status(created ? 201 : 200).json({ token: signToken(user), user, joinedProjects });
+  const pendingInvitations = created ? await notifyPendingInvites(user) : 0;
+  res.status(created ? 201 : 200).json({ token: signToken(user), user, pendingInvitations });
 }
 
 // Cho giao diện biết có bật đăng nhập Google không (Client ID là thông tin công khai)

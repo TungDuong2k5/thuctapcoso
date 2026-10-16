@@ -9,6 +9,13 @@ const reports = require('../controllers/reportController');
 const stats = require('../controllers/statsController');
 const notifications = require('../controllers/notificationController');
 const attachments = require('../controllers/attachmentController');
+const labels = require('../controllers/labelController');
+const avatar = require('../controllers/avatarController');
+const chat = require('../controllers/chatController');
+const dm = require('../controllers/dmController');
+const calls = require('../controllers/callController');
+const overview = require('../controllers/overviewController');
+const dashboard = require('../controllers/dashboardController');
 const { uploadFiles } = require('../middlewares/upload');
 
 const router = express.Router();
@@ -20,6 +27,8 @@ router.post('/auth/google', h(auth.googleLogin));
 router.get('/auth/config', auth.authConfig);
 router.get('/auth/reset-password', h(auth.checkResetToken));
 router.post('/auth/reset-password', h(auth.resetPassword));
+// /invitations/mine phải khai báo trước /invitations/:token (không thì 'mine' bị hiểu là mã mời)
+router.get('/invitations/mine', requireAuth, h(projects.myInvitations));
 router.get('/invitations/:token', h(projects.invitationInfo));
 
 // Từ đây trở xuống phải đăng nhập
@@ -27,21 +36,32 @@ router.use(requireAuth);
 
 router.get('/auth/me', h(auth.me));
 router.put('/users/me', h(auth.updateMe));
+router.post('/users/me/avatar', avatar.receiveAvatar, h(avatar.setAvatar));
+router.delete('/users/me/avatar', h(avatar.removeAvatar));
 router.get('/users/search', h(projects.searchUsers));
 
 router.get('/admin/users', requireAdmin, h(admin.listUsers));
 router.patch('/admin/users/:id', requireAdmin, h(admin.updateUser));
 router.post('/admin/users/:id/reset-link', requireAdmin, h(admin.resetLink));
 
+router.get('/overview', h(overview.overview));
+router.get('/dashboard', h(dashboard.dashboard));
 router.get('/projects', h(projects.list));
 router.post('/projects', h(projects.create));
 router.get('/projects/:id', h(projects.detail));
 router.put('/projects/:id', h(projects.update));
+router.delete('/projects/:id', h(projects.remove));
+router.patch('/projects/:id/members/:userId', h(projects.updateMemberRole));
+router.get('/projects/:projectId/labels', h(labels.list));
+router.post('/projects/:projectId/labels', h(labels.create));
+router.put('/labels/:id', h(labels.update));
+router.delete('/labels/:id', h(labels.remove));
 router.post('/projects/:id/members', h(projects.addMembers));
 router.delete('/projects/:id/members/:userId', h(projects.removeMember));
 router.get('/projects/:id/invitations', h(projects.listInvitations));
 router.delete('/invitations/:inviteId', h(projects.cancelInvitation));
 router.post('/invitations/:token/accept', h(projects.acceptInvitation));
+router.post('/invitations/:token/decline', h(projects.declineInvitation));
 
 router.get('/projects/:projectId/tasks', h(tasks.list));
 router.post('/projects/:projectId/tasks', h(tasks.create));
@@ -62,6 +82,19 @@ router.post('/projects/:projectId/reports', h(reports.save));
 router.patch('/reports/:id/review', h(reports.review));
 
 router.get('/projects/:projectId/stats', h(stats.projectStats));
+
+router.get('/tasks/:id/dm', h(dm.contacts));
+router.get('/tasks/:id/dm/:userId', h(dm.thread));
+router.post('/tasks/:id/dm/:userId', h(dm.send));
+router.get('/projects/:projectId/messages', h(chat.list));
+router.post('/projects/:projectId/messages', h(chat.send));
+
+router.get('/projects/:projectId/calls', h(calls.list));
+router.post('/projects/:projectId/calls', h(calls.create));
+router.post('/calls/join', h(calls.join));
+router.get('/calls/ice-servers', h(calls.iceServers));
+router.post('/calls/:id/invite', h(calls.invite));
+router.post('/calls/:id/end', h(calls.end));
 
 router.get('/notifications', h(notifications.list));
 router.patch('/notifications/read', h(notifications.markRead));

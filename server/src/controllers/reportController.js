@@ -2,11 +2,13 @@ const { Op } = require('sequelize');
 const {
   sequelize, WeeklyReport, Task, User, Project,
 } = require('../models');
-const { getRole, requireLeader, leaderIds } = require('../services/projectAccess');
+const {
+  getRole, requireLeader, leaderIds, assertCanEdit,
+} = require('../services/projectAccess');
 const { notify } = require('../services/notify');
 const { HttpError, mondayOf } = require('../utils/http');
 
-const userAttrs = ['id', 'fullName', 'email'];
+const userAttrs = ['id', 'fullName', 'email', 'avatarUrl'];
 
 function addDays(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00Z`);
@@ -71,7 +73,7 @@ async function suggest(req, res) {
 // Tạo mới hoặc ghi đè bản nháp của tuần (mỗi người 1 báo cáo / tuần / dự án)
 async function save(req, res) {
   const { projectId } = req.params;
-  await getRole(projectId, req.user);
+  assertCanEdit(await getRole(projectId, req.user));
   const weekStart = mondayOf(req.body.weekStart);
   const {
     doneText, planText, issuesText, submit,

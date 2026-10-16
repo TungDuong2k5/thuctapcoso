@@ -25,9 +25,15 @@ function sunday(monday) {
 
 const emptyForm ={ doneText: '', planText: '', issuesText: '' };
 
-export default function ReportsTab({ project, isLeader }) {
+export default function ReportsTab({ project, isLeader, isGuest }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
+  // Đổi tuần nhưng giữ các tham số khác trên địa chỉ (VD đang mở khung báo cáo)
+  const setWeek = (w) => setParams((p) => {
+    const next = new URLSearchParams(p);
+    next.set('week', w);
+    return next;
+  });
   const week = mondayOf(params.get('week') || new Date().toISOString().slice(0, 10));
   const [reports, setReports] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -73,11 +79,13 @@ export default function ReportsTab({ project, isLeader }) {
   return (
     <div>
       <div className="row week-nav">
-        <button type="button" className="btn ghost" onClick={() => setParams({ week: shiftWeek(week, -1) })}>← Tuần trước</button>
+        <button type="button" className="btn ghost" onClick={() => setWeek(shiftWeek(week, -1))}>← Tuần trước</button>
         <strong>Tuần {week} → {sunday(week)}</strong>
-        <button type="button" className="btn ghost" onClick={() => setParams({ week: shiftWeek(week, 1) })}>Tuần sau →</button>
+        <button type="button" className="btn ghost" onClick={() => setWeek(shiftWeek(week, 1))}>Tuần sau →</button>
       </div>
 
+      {isGuest && <div className="info">Bạn là khách của dự án nên không cần viết báo cáo tuần.</div>}
+      {!isGuest && (
       <div className="card">
         <div className="row between">
           <h3>Báo cáo của tôi</h3>
@@ -98,12 +106,13 @@ export default function ReportsTab({ project, isLeader }) {
           mine?.feedback && <div className="info"><strong>Nhận xét:</strong> {mine.feedback} {mine.score != null && `· Điểm: ${mine.score}`}</div>
         )}
       </div>
+      )}
 
       {isLeader && (
         <div className="card">
           <h3>Báo cáo của nhóm</h3>
           <p className="muted small">
-            Đã nộp {reports.filter((r) => r.status !== 'draft').length}/{project.members.length} thành viên
+            Đã nộp {reports.filter((r) => r.status !== 'draft').length}/{project.members.filter((m) => m.role !== 'guest').length} thành viên
           </p>
           {reports.filter((r) => r.status !== 'draft').map((r) => <ReviewItem key={r.id} report={r} onDone={load} />)}
           <p className="muted small">

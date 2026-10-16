@@ -42,6 +42,11 @@ export async function downloadAttachment(att) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+export function formatPhone(phone) {
+  if (!phone) return '';
+  return phone.length === 10 ? `${phone.slice(0, 4)} ${phone.slice(4, 7)} ${phone.slice(7)}` : phone;
+}
+
 export function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
