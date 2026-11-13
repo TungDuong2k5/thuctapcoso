@@ -38,6 +38,8 @@ async function start() {
 }
 
 start().catch((err) => {
-  console.error('Không khởi động được server:', err);
+  // Lỗi từ SQL Server: in rõ nội dung và câu lệnh gây lỗi
+  console.error('Không khởi động được server:', err.original?.message || err.message || err);
+  if (err.sql) console.error('Câu lệnh SQL:', err.sql);
   process.exit(1);
 });

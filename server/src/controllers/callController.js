@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const {
   CallRoom, Project, ProjectMember, User,
 } = require('../models');
-const { getRole, requireLeader } = require('../services/projectAccess');
+const { getRole, assertCanEdit } = require('../services/projectAccess');
 const { notify } = require('../services/notify');
 const { emitToProject, emitToCall, clearCallChat } = require('../sockets');
 const { HttpError } = require('../utils/http');
@@ -30,7 +30,16 @@ function recordFailure(userId) {
   else f.count += 1;
 }
 
-function roomJson(room, isLeader) {
+// Trưởng nhóm hoặc chính người mở phòng được gửi lại lời mời và kết thúc phòng
+async function canManage(room, user) {
+  const role = await getRole(room.projectId, user);
+  return role === 'leader' || room.hostId === user.id;
+}
+async function requireManager(room, user) {
+  if (!(await canManage(room, user))) throw new HttpError(403, 'Chỉ trưởng nhóm hoặc người mở phòng được thực hiện');
+}
+
+function roomJson(room, showPassword) {
   const json = {
     id: room.id,
     projectId: room.projectId,
@@ -40,7 +49,7 @@ function roomJson(room, isLeader) {
     createdAt: room.createdAt,
     host: room.host ? { id: room.host.id, fullName: room.host.fullName } : null,
   };
-  if (isLeader) json.password = room.password; // chỉ trưởng nhóm xem lại được mật khẩu để gửi cho thành viên
+  if (showPassword) json.password = room.password; // trưởng nhóm / người mở phòng xem lại được để gửi cho mọi người
   return json;
 }
 
@@ -59,13 +68,13 @@ async function list(req, res) {
     include: [{ model: User, as: 'host', attributes: ['id', 'fullName'] }],
     order: [['id', 'DESC']],
   });
-  res.json(rooms.map((r) => roomJson(r, role === 'leader')));
+  res.json(rooms.map((r) => roomJson(r, role === 'leader' || r.hostId === req.user.id)));
 }
 
-// Trưởng nhóm mở phòng gọi: tạo mã phòng + mật khẩu, gửi thông báo cho các thành viên
+// Trưởng nhóm hoặc thành viên mở phòng gọi (khách chỉ xem thì không): tạo mã phòng + mật khẩu, gửi thông báo cho cả nhóm
 async function create(req, res) {
   const projectId = Number(req.params.projectId);
-  await requireLeader(projectId, req.user);
+  assertCanEdit(await getRole(projectId, req.user));
   if (await CallRoom.count({ where: { projectId, status: 'active' } })) {
     throw new HttpError(400, 'Dự án đang có một phòng gọi, hãy kết thúc phòng cũ trước');
   }
@@ -93,7 +102,7 @@ async function create(req, res) {
 async function invite(req, res) {
   const room = await CallRoom.findByPk(req.params.id);
   if (!room || room.status !== 'active') throw new HttpError(404, 'Phòng gọi không tồn tại hoặc đã kết thúc');
-  await requireLeader(room.projectId, req.user);
+  await requireManager(room, req.user);
   const members = await ProjectMember.findAll({ where: { projectId: room.projectId } });
   let ids = members.map((m) => m.userId);
   if (Array.isArray(req.body.userIds) && req.body.userIds.length) {
@@ -133,7 +142,7 @@ async function join(req, res) {
 async function end(req, res) {
   const room = await CallRoom.findByPk(req.params.id);
   if (!room || room.status !== 'active') throw new HttpError(404, 'Phòng gọi không tồn tại hoặc đã kết thúc');
-  await requireLeader(room.projectId, req.user);
+  await requireManager(room, req.user);
   await room.update({ status: 'ended', endedAt: new Date() });
   emitToCall(room.id, 'call:ended', { id: room.id });
   clearCallChat(room.id);

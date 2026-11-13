@@ -17,7 +17,27 @@ const RESULT_LABEL = {
   inactive: 'Tài khoản đang bị khóa',
 };
 
+const MAIL_LABEL = {
+  sent: '📧 Đã gửi mail',
+  failed: '⚠ Không gửi được mail, hãy gửi link bên dưới',
+  off: 'Chưa bật gửi mail (chạy cau-hinh-mail.bat), hãy gửi link bên dưới',
+};
+
 const inviteLink = (token) => `${window.location.origin}/invite/${token}`;
+// Mở app bằng localhost thì link mời cũng là localhost: người ở máy khác không mở được
+const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+// Link mời hiện rõ để xem / sao chép rồi gửi qua Zalo, Messenger...
+function InviteLink({ token, copied, onCopy }) {
+  return (
+    <div className="invite-link">
+      <input readOnly value={inviteLink(token)} aria-label="Link mời" onFocus={(e) => e.target.select()} />
+      <button type="button" className="btn primary" onClick={() => onCopy(token)}>
+        {copied === token ? 'Đã sao chép ✓' : 'Sao chép link'}
+      </button>
+    </div>
+  );
+}
 
 // Ảnh đại diện của chính mình: bấm để đổi ảnh (JPG/PNG/WEBP/GIF, tối đa 2MB)
 function MyAvatar({ me, onChanged }) {
@@ -52,6 +72,52 @@ function MyAvatar({ me, onChanged }) {
   );
 }
 
+// Link mời chung của dự án: có sẵn, gửi cho cả nhóm, ai có link đều vào được với vai trò Thành viên
+function GroupInviteLink({ project }) {
+  const [code, setCode] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api.get(`/projects/${project.id}/invite-link`).then((res) => setCode(res.data.code)).catch((err) => setError(errMsg(err)));
+  }, [project.id]);
+  const link = code ? `${window.location.origin}/join/${code}` : '';
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt('Sao chép link mời:', link);
+    }
+  };
+  const reset = async () => {
+    if (!window.confirm('Tạo link mới? Link cũ sẽ không dùng được nữa.')) return;
+    try {
+      setCode((await api.post(`/projects/${project.id}/invite-link/reset`)).data.code);
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+  return (
+    <div className="card">
+      <h3>🔗 Link mời vào dự án</h3>
+      <p className="muted small">Gửi link này cho cả nhóm qua Zalo/Messenger. Ai có link đều vào được dự án với vai trò Thành viên, không cần nhập email. Lỡ gửi nhầm người thì bấm Đổi link.</p>
+      {error && <div className="alert">{error}</div>}
+      <div className="invite-link">
+        <input readOnly value={link} placeholder="Đang tạo link..." aria-label="Link mời vào dự án" onFocus={(e) => e.target.select()} />
+        <button type="button" className="btn primary" disabled={!code} onClick={copy}>{copied ? 'Đã sao chép ✓' : 'Sao chép link'}</button>
+        <button type="button" className="btn" disabled={!code} onClick={reset}>Đổi link</button>
+      </div>
+      {isLocalhost && (
+        <div className="info" style={{ marginTop: 10 }}>
+          Bạn đang mở TaskFlow bằng địa chỉ localhost nên link này chỉ mở được trên máy của bạn.
+          Muốn gửi cho người khác, hãy chạy chia-se-online.bat rồi mở TaskFlow bằng link https để lấy link mời.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // part: 'invite' = chỉ phần mời · 'list' = chỉ danh sách thành viên · bỏ trống = cả hai
 export default function MembersTab({
   project, isLeader, onChange, part,
@@ -79,6 +145,16 @@ export default function MembersTab({
       setEmails('');
       onChange();
       loadInvites();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  const resend = async (inv) => {
+    setError('');
+    try {
+      const res = await api.post(`/projects/${project.id}/members`, { emails: inv.email, role: inv.role });
+      setResults(res.data.results);
     } catch (err) {
       setError(errMsg(err));
     }
@@ -122,13 +198,15 @@ export default function MembersTab({
 
   return (
     <div>
+      {isLeader && part !== 'list' && <GroupInviteLink project={project} />}
       {isLeader && part !== 'list' && (
         <form className="card" onSubmit={add}>
-          <h3>Mời thành viên</h3>
+          <h3>Mời theo email</h3>
           <p className="muted small">
             Nhập email của mọi người, mỗi email một dòng hoặc cách nhau bằng dấu phẩy.
             Mỗi người nhận một lời mời và tự bấm Tham gia hoặc Từ chối (bạn sẽ nhận thông báo kết quả).
             Ai chưa có tài khoản thì đăng ký bằng đúng email đó (hoặc mở link mời) sẽ thấy lời mời.
+            Cách này dùng khi muốn chọn vai trò khác hoặc mời riêng từng người.
           </p>
           <textarea
             rows={3}
@@ -145,11 +223,19 @@ export default function MembersTab({
             </select>
             <button type="submit" className="btn primary">Mời</button>
           </div>
+          {isLocalhost && results.some((r) => r.mail === 'sent') && (
+            <div className="info" style={{ marginTop: 10 }}>
+              Mail đã gửi nhưng nút trong mail đang trỏ tới localhost, người nhận ở máy khác sẽ không mở được.
+              Hãy chạy chia-se-online.bat, mở TaskFlow bằng link https rồi bấm Gửi lại mail.
+            </div>
+          )}
           {results.length > 0 && (
             <ul className="result-list">
               {results.map((r) => (
                 <li key={r.email} className={`result ${r.status}`}>
                   <strong>{r.email}</strong>: {RESULT_LABEL[r.status]}
+                  {r.mail && <div className={`mail-status ${r.mail}`}>{MAIL_LABEL[r.mail]}</div>}
+                  {r.token && <InviteLink token={r.token} copied={copied} onCopy={copy} />}
                 </li>
               ))}
             </ul>
@@ -162,19 +248,18 @@ export default function MembersTab({
       {isLeader && part !== 'list' && invites.length > 0 && (
         <div className="card">
           <h3>Lời mời đang chờ ({invites.length})</h3>
-          <p className="muted small">Gửi link mời qua Zalo/Messenger cho người chưa có tài khoản để họ vào nhanh hơn.</p>
+          <p className="muted small">Gửi link mời qua Zalo/Messenger để họ vào nhanh hơn. Mỗi link dành riêng cho đúng email đó.</p>
           <table className="table">
-            <thead><tr><th>Email</th><th>Vai trò</th><th>Người mời</th><th /></tr></thead>
+            <thead><tr><th>Email</th><th>Vai trò</th><th>Người mời</th><th>Link mời</th><th /></tr></thead>
             <tbody>
               {invites.map((inv) => (
                 <tr key={inv.id}>
                   <td>{inv.email}</td>
                   <td>{ROLE_LABEL[inv.role]}</td>
                   <td>{inv.inviter?.fullName}</td>
+                  <td><InviteLink token={inv.token} copied={copied} onCopy={copy} /></td>
                   <td className="right">
-                    <button type="button" className="btn ghost" onClick={() => copy(inv.token)}>
-                      {copied === inv.token ? 'Đã sao chép ✓' : 'Sao chép link mời'}
-                    </button>
+                    <button type="button" className="btn ghost" onClick={() => resend(inv)}>Gửi lại mail</button>
                     <button type="button" className="btn ghost danger-text" onClick={() => cancel(inv)}>Hủy</button>
                   </td>
                 </tr>

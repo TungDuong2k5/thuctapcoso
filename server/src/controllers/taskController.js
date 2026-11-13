@@ -14,7 +14,7 @@ const {
   assertCanMove, changeStatus, notifyStatusChange, taskLink, canReview,
 } = require('../services/taskFlow');
 const { getRole, assertCanEdit } = require('../services/projectAccess');
-const { notify } = require('../services/notify');
+const { notify, resolveUrgent } = require('../services/notify');
 const { emitToProject } = require('../sockets');
 const { HttpError } = require('../utils/http');
 
@@ -289,6 +289,7 @@ async function remove(req, res) {
   const files = await Attachment.findAll({ where: { taskId: task.id } });
   await TaskLabel.destroy({ where: { taskId: task.id } });
   await task.destroy();
+  await resolveUrgent({ taskId: task.id }); // việc đã xóa → tắt báo khẩn của việc đó
   files.forEach((f) => removeStoredFile(f.storedName));
   emitToProject(task.projectId, 'task:changed', { id: task.id });
   res.json({ success: true });

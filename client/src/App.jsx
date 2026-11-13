@@ -9,6 +9,7 @@ import ProjectPage from './pages/ProjectPage';
 import AdminUsers from './pages/AdminUsers';
 import Profile from './pages/Profile';
 import Invite from './pages/Invite';
+import JoinProject from './pages/JoinProject';
 import ResetPassword from './pages/ResetPassword';
 import { AppearancePage, OverviewPage } from './pages/SimplePages';
 
@@ -26,6 +27,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/invite/:token" element={<Invite />} />
+      <Route path="/join/:code" element={<JoinProject />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<Private><Dashboard /></Private>} />
       <Route path="/projects" element={<Private><Projects /></Private>} />

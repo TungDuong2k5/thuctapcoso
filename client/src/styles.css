@@ -977,7 +977,7 @@ html[data-theme="dark"] .brand-logo { background: rgba(255, 255, 255, 0.92); bor
 .icon-btn:hover { background: rgba(148, 163, 184, 0.18); }
 .app-header { gap: 12px; padding: 10px 24px; min-height: 60px; }
 .user-pill { padding: 7px 14px; border-radius: 999px; background: rgba(37, 99, 235, 0.1); color: var(--primary); font-weight: 600; font-size: 13px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
-.side-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.5); z-index: 45; }
+.side-backdrop { position: fixed; inset: 0; background: rgba(2, 6, 23, 0.5); z-index: 48; }
 @media (max-width: 900px) {
   .shell, .shell.collapsed { --side-w: 264px; }
   .sidebar { transform: translateX(-100%); }
@@ -1024,3 +1024,161 @@ html[data-theme="dark"] .dash-chip.late { background: rgba(239, 68, 68, 0.2); co
 html[data-theme="dark"] .dash-chip.review { background: rgba(34, 197, 94, 0.18); color: #86efac; }
 html[data-theme="dark"] .side-user-menu { background: #111a2e; }
 html[data-theme="dark"] .side-user-menu button:hover { background: #1e293b; }
+
+/* Mục dự án trên thanh bên (là nút bấm) */
+button.side-item { width: 100%; border: none; background: none; font: inherit; cursor: pointer; text-align: left; }
+.side-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Khung toàn màn hình của dự án chừa chỗ cho thanh bên để vẫn chuyển mục được */
+@media (min-width: 901px) {
+  .shell .fullscreen { left: var(--side-w); }
+}
+
+/* Hàng nút của dự án ở đầu trang */
+.project-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.project-tools .btn { display: inline-flex; align-items: center; gap: 6px; }
+html[data-theme="dark"] .project-tools .btn:not(.primary) { background: #111a2e; border-color: #263247; color: var(--text); }
+html[data-theme="dark"] .project-tools .btn:not(.primary):hover { background: #1e293b; }
+
+/* Nút cài ứng dụng (PWA) trên thanh bên */
+.side-item.install-app { margin-top: 6px; color: #93c5fd; border: 1px dashed #2b4a85; }
+.side-item.install-app:hover { background: #18284a; color: #fff; }
+/* Khi chạy như app (đã cài): chừa vùng tai thỏ / thanh trạng thái trên điện thoại */
+@media (display-mode: standalone) {
+  .app-header { padding-top: max(10px, env(safe-area-inset-top)); }
+  .sidebar { padding-top: env(safe-area-inset-top); }
+}
+
+/* Nút Thông báo khi có báo khẩn ở chế độ tối: nền đỏ sẫm, chữ đỏ nhạt cho dễ đọc */
+@keyframes urgent-pulse-dark { 50% { background: rgba(239, 68, 68, 0.35); } }
+html[data-theme="dark"] .bell-urgent { color: #fca5a5; background: rgba(239, 68, 68, 0.15); animation-name: urgent-pulse-dark; }
+html[data-theme="dark"] .notif.urgent { background: rgba(239, 68, 68, 0.14); }
+html[data-theme="dark"] .notif.urgent span { color: #fecaca; }
+
+/* ===== Thanh bên chế độ sáng: nền trắng, chữ tối (không dùng nền đen) ===== */
+html:not([data-theme="dark"]) .sidebar { background: rgba(255, 255, 255, 0.92); color: #334155; border-right-color: #e2e8f0; box-shadow: 2px 0 16px rgba(15, 23, 42, 0.05); }
+html:not([data-theme="dark"]) .side-brand { color: #1e3a8a; border-bottom-color: #e2e8f0; }
+html:not([data-theme="dark"]) .side-title { color: #94a3b8; }
+html:not([data-theme="dark"]) .side-item { color: #334155; }
+html:not([data-theme="dark"]) .side-item:hover { background: #eff6ff; color: #1d4ed8; }
+html:not([data-theme="dark"]) .side-item.active { background: #dbeafe; color: #1d4ed8; box-shadow: inset 3px 0 0 #2563eb; }
+html:not([data-theme="dark"]) .side-user { border-top-color: #e2e8f0; }
+html:not([data-theme="dark"]) .side-user-text strong { color: #0f172a; }
+html:not([data-theme="dark"]) .side-user-text small { color: #64748b; }
+html:not([data-theme="dark"]) .side-user .icon-btn { color: #475569; }
+html:not([data-theme="dark"]) .side-item.install-app { color: #1d4ed8; border-color: #93c5fd; }
+html:not([data-theme="dark"]) .side-item.install-app:hover { background: #eff6ff; color: #1d4ed8; }
+
+
+/* ===== Có ảnh nền: KHÔNG dùng khung nền, chữ nằm thẳng trên ảnh, có viền sáng/tối để luôn rõ ===== */
+html[data-bg="image"] .sidebar, html[data-bg="image"] .app-header, html[data-bg="image"] .dash-stat, html[data-bg="image"] .dash-panel,
+html[data-bg="image"] .card, html[data-bg="image"] .column, html[data-bg="image"] .fullscreen, html[data-bg="image"] .fullscreen-head,
+html[data-bg="image"] .view-switch {
+  background: transparent !important; box-shadow: none !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+/* chỉ giữ đường viền mảnh để nhận ra từng vùng */
+html[data-bg="image"] .dash-stat, html[data-bg="image"] .dash-panel, html[data-bg="image"] .card, html[data-bg="image"] .column {
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+}
+html[data-bg="image"] .sidebar { border-right: 1.5px solid rgba(255, 255, 255, 0.75); }
+html[data-bg="image"] .app-header, html[data-bg="image"] .side-brand { border-bottom: 1.5px solid rgba(255, 255, 255, 0.75); }
+html[data-bg="image"] .side-user { border-top: 1.5px solid rgba(255, 255, 255, 0.75); }
+html[data-bg="image"] .dash-panel-head, html[data-bg="image"] .dash-daynav { border-bottom-color: rgba(255, 255, 255, 0.6); }
+
+/* Chế độ sáng: chữ tối đậm + quầng trắng quanh chữ */
+html[data-bg="image"]:not([data-theme="dark"]) .shell-main, html[data-bg="image"]:not([data-theme="dark"]) .sidebar {
+  color: #0f172a; font-weight: 500;
+  text-shadow: 0 0 2px #fff, 0 0 4px #fff, 0 0 8px #fff, 0 0 14px rgba(255, 255, 255, 0.95);
+}
+html[data-bg="image"]:not([data-theme="dark"]) .muted, html[data-bg="image"]:not([data-theme="dark"]) .dash-stat small,
+html[data-bg="image"]:not([data-theme="dark"]) .side-title, html[data-bg="image"]:not([data-theme="dark"]) .side-user-text small { color: #1e293b !important; }
+html[data-bg="image"]:not([data-theme="dark"]) .side-item, html[data-bg="image"]:not([data-theme="dark"]) .dash-item,
+html[data-bg="image"]:not([data-theme="dark"]) .dash-title, html[data-bg="image"]:not([data-theme="dark"]) a.dash-item { color: #0f172a; font-weight: 600; }
+html[data-bg="image"]:not([data-theme="dark"]) .side-item.active, html[data-bg="image"]:not([data-theme="dark"]) .side-item:hover,
+html[data-bg="image"]:not([data-theme="dark"]) .dash-item:hover { background: rgba(255, 255, 255, 0.45); color: #1d4ed8; }
+
+/* Chế độ tối: chữ trắng + quầng tối quanh chữ */
+html[data-bg="image"][data-theme="dark"] .shell-main, html[data-bg="image"][data-theme="dark"] .sidebar {
+  color: #fff; font-weight: 500;
+  text-shadow: 0 0 2px #000, 0 0 4px #000, 0 0 8px rgba(0, 0, 0, 0.9), 0 0 14px rgba(0, 0, 0, 0.8);
+}
+html[data-bg="image"][data-theme="dark"] .muted, html[data-bg="image"][data-theme="dark"] .dash-stat small,
+html[data-bg="image"][data-theme="dark"] .side-title, html[data-bg="image"][data-theme="dark"] .side-user-text small { color: #e2e8f0 !important; }
+html[data-bg="image"][data-theme="dark"] .side-item, html[data-bg="image"][data-theme="dark"] .dash-item,
+html[data-bg="image"][data-theme="dark"] a.dash-item { color: #fff; font-weight: 600; }
+html[data-bg="image"][data-theme="dark"] .side-item.active, html[data-bg="image"][data-theme="dark"] .side-item:hover,
+html[data-bg="image"][data-theme="dark"] .dash-item:hover { background: rgba(0, 0, 0, 0.3); }
+
+/* Các nhãn nhỏ, nút, ô nhập, thẻ công việc, cửa sổ bật lên vẫn giữ nền riêng nên không cần quầng chữ */
+html[data-bg="image"] .dash-chip, html[data-bg="image"] .btn, html[data-bg="image"] input, html[data-bg="image"] select,
+html[data-bg="image"] textarea, html[data-bg="image"] .task-card, html[data-bg="image"] .modal, html[data-bg="image"] .dropdown,
+html[data-bg="image"] .side-user-menu, html[data-bg="image"] .user-pill, html[data-bg="image"] .badge, html[data-bg="image"] .tag { text-shadow: none; }
+/* Viền chữ đậm hơn để chữ không lẫn vào hình vẽ trên ảnh nền */
+html[data-bg="image"]:not([data-theme="dark"]) .shell-main, html[data-bg="image"]:not([data-theme="dark"]) .sidebar {
+  text-shadow: 1px 0 0 #fff, -1px 0 0 #fff, 0 1px 0 #fff, 0 -1px 0 #fff, 1px 1px 0 #fff, -1px -1px 0 #fff,
+    1px -1px 0 #fff, -1px 1px 0 #fff, 0 0 6px #fff, 0 0 12px #fff, 0 0 18px rgba(255, 255, 255, 0.9);
+}
+html[data-bg="image"][data-theme="dark"] .shell-main, html[data-bg="image"][data-theme="dark"] .sidebar {
+  text-shadow: 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 1px 1px 0 #000, -1px -1px 0 #000,
+    1px -1px 0 #000, -1px 1px 0 #000, 0 0 6px #000, 0 0 12px rgba(0, 0, 0, 0.8);
+}
+/* chế độ sáng: đường kẻ khung màu tối mảnh (viền trắng không thấy trên ảnh sáng) */
+html[data-bg="image"]:not([data-theme="dark"]) .dash-stat, html[data-bg="image"]:not([data-theme="dark"]) .dash-panel,
+html[data-bg="image"]:not([data-theme="dark"]) .card, html[data-bg="image"]:not([data-theme="dark"]) .column { border-color: rgba(30, 41, 59, 0.35); }
+html[data-bg="image"]:not([data-theme="dark"]) .sidebar { border-right-color: rgba(30, 41, 59, 0.3); }
+html[data-bg="image"]:not([data-theme="dark"]) .app-header, html[data-bg="image"]:not([data-theme="dark"]) .side-brand,
+html[data-bg="image"]:not([data-theme="dark"]) .dash-panel-head, html[data-bg="image"]:not([data-theme="dark"]) .dash-daynav { border-bottom-color: rgba(30, 41, 59, 0.25); }
+html[data-bg="image"]:not([data-theme="dark"]) .side-user { border-top-color: rgba(30, 41, 59, 0.25); }
+/* nhãn nhỏ: nền đặc cho rõ ở cả hai chế độ */
+html[data-bg="image"] .dash-chip { background: #e0e7ff; color: #3730a3; font-weight: 600; }
+html[data-bg="image"] .dash-chip.warn { background: #fef3c7; color: #92400e; }
+html[data-bg="image"] .dash-chip.late { background: #fee2e2; color: #b91c1c; }
+html[data-bg="image"] .dash-chip.review { background: #dcfce7; color: #166534; }
+html[data-bg="image"] .user-pill { background: #dbeafe; color: #1d4ed8; }
+html[data-bg="image"] .bell > button { background: rgba(255, 255, 255, 0.85); color: #0f172a; text-shadow: none; }
+html[data-bg="image"] .bell > button.bell-urgent { background: #fee2e2; color: #b91c1c; }
+html[data-bg="image"] .avatar, html[data-bg="image"] .avatar * { text-shadow: none; }
+
+/* ===== Chữ to hơn, dễ nhìn hơn ===== */
+body { font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+.small { font-size: 13.5px; }
+.tag, .badge { font-size: 13px; }
+input, select, textarea, .btn { font-size: 15px; }
+/* thanh bên */
+.side-item { font-size: 15.5px; padding: 11px 12px; }
+.side-title { font-size: 12px; }
+.side-brand { font-size: 22px; }
+.side-user-text strong { font-size: 14.5px; }
+.side-user-text small { font-size: 13px; }
+.user-pill { font-size: 14px; }
+/* trang chủ */
+.dash-head h2 { font-size: 26px; }
+.dash-head small { font-size: 14px; }
+.dash-stat small { font-size: 15px; }
+.dash-stat strong { font-size: 34px; }
+.dash-title { font-size: 17px; }
+.dash-daynav strong { font-size: 16px; }
+.dash-item-title { font-size: 16px; }
+.dash-item small { font-size: 13.5px; }
+.dash-chip { font-size: 13px; padding: 3px 10px; }
+.dash-empty { font-size: 15px; }
+/* bảng công việc, thông báo */
+.task-card { font-size: 15px; }
+.notif { font-size: 14.5px; }
+.page-head h2 { font-size: 24px; }
+
+/* Link mời hiện rõ để sao chép */
+.invite-link { display: flex; gap: 6px; margin-top: 6px; min-width: 260px; }
+.invite-link input { flex: 1; min-width: 0; font-size: 13.5px; }
+.invite-link .btn { white-space: nowrap; }
+html[data-theme="dark"] .result { background: #1e293b; color: var(--text); }
+html[data-theme="dark"] .result.added { background: rgba(34, 197, 94, 0.16); }
+html[data-theme="dark"] .result.invited { background: rgba(59, 130, 246, 0.18); }
+html[data-theme="dark"] .result.invalid, html[data-theme="dark"] .result.inactive { background: rgba(239, 68, 68, 0.18); }
+
+/* Trạng thái gửi mail mời */
+.mail-status { font-size: 13.5px; margin-top: 2px; }
+.mail-status.sent { color: #15803d; font-weight: 600; }
+.mail-status.failed { color: var(--danger); font-weight: 600; }
+html[data-theme="dark"] .mail-status.sent { color: #86efac; }
+html[data-theme="dark"] .mail-status.failed { color: #fca5a5; }

@@ -132,7 +132,7 @@ export default function ProjectPage() {
           <strong>📞 Gọi nhóm</strong>
           <button type="button" className="float-close" title="Thu nhỏ (cuộc gọi vẫn tiếp tục)" onClick={() => setPanel(null)}>×</button>
         </div>
-        <CallTab project={project} isLeader={isLeader} initialCode={callCode} />
+        <CallTab project={project} isLeader={isLeader} isGuest={isGuest} initialCode={callCode} />
       </div>
 
       <div className="float-dock">

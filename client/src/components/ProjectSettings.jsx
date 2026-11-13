@@ -18,7 +18,6 @@ export default function ProjectSettings({ project, onChange }) {
   });
   const [newLabel, setNewLabel] = useState({ name: '', color: PALETTE[5] });
   const [editing, setEditing] = useState({});
-  const [confirmName, setConfirmName] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -61,9 +60,10 @@ export default function ProjectSettings({ project, onChange }) {
   };
 
   const removeProject = async () => {
+    if (!window.confirm(`Xóa vĩnh viễn dự án "${project.name}"? Không thể khôi phục.`)) return;
     setError('');
     try {
-      await api.delete(`/projects/${project.id}`, { data: { confirmName } });
+      await api.delete(`/projects/${project.id}`, { data: { confirmName: project.name } });
       navigate('/', { replace: true });
     } catch (err) {
       setError(errMsg(err));
@@ -146,11 +146,8 @@ export default function ProjectSettings({ project, onChange }) {
             Xóa vĩnh viễn dự án cùng <strong>toàn bộ</strong> công việc, file đã nộp, bình luận, báo cáo tuần.
             Không thể khôi phục. Các thành viên sẽ nhận được thông báo.
           </p>
-          <label>Gõ đúng tên dự án <strong>{project.name}</strong> để xác nhận
-            <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={project.name} />
-          </label>
           <div className="row end">
-            <button type="button" className="btn danger" disabled={confirmName.trim() !== project.name} onClick={removeProject}>
+            <button type="button" className="btn danger" onClick={removeProject}>
               Xóa vĩnh viễn dự án
             </button>
           </div>

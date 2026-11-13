@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Notification } = require('../models');
+const { Notification, Task, Project } = require('../models');
 const { emitToUser } = require('../sockets');
 
 // Lưu thông báo vào DB rồi đẩy realtime tới người nhận.
@@ -29,4 +29,29 @@ async function resolveUrgent({ taskId, projectId }) {
   return rows.length;
 }
 
-module.exports = { notify, resolveUrgent, URGENT_TYPES };
+// Dọn thông báo khẩn đã lỗi thời của một người (VD tạo trước khi có tính năng tự tắt, công việc đã bị xóa):
+// việc đã nộp / đã xong / đã xóa hoặc dự án đã hoàn thành → đánh dấu đã đọc để không còn báo khẩn
+async function pruneStaleUrgent(userId) {
+  const rows = await Notification.findAll({ where: { userId, isRead: false, type: URGENT_TYPES } });
+  if (!rows.length) return 0;
+  const taskIdOf = (n) => Number((/[?&]task=(\d+)/.exec(n.link || '') || [])[1]) || null;
+  const ids = [...new Set(rows.map(taskIdOf).filter(Boolean))];
+  const tasks = ids.length ? await Task.findAll({
+    where: { id: ids },
+    attributes: ['id', 'status', 'submittedAt'],
+    include: [{ model: Project, attributes: ['status'] }],
+  }) : [];
+  const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+  const stale = rows.filter((n) => {
+    const t = byId[taskIdOf(n)];
+    if (!t) return true;
+    return ['review', 'done'].includes(t.status) || t.Project?.status === 'archived';
+  });
+  if (!stale.length) return 0;
+  await Notification.update({ isRead: true }, { where: { id: stale.map((n) => n.id) } });
+  return stale.length;
+}
+
+module.exports = {
+  notify, resolveUrgent, pruneStaleUrgent, URGENT_TYPES,
+};

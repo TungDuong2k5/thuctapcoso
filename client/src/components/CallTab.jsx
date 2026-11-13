@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import api, { errMsg, getSocket } from '../api/client';
 import CallRoom from './CallRoom';
+import { useAuth } from '../context/AuthContext';
 
-// Gọi nhóm: trưởng nhóm mở phòng (mã phòng + mật khẩu) và gửi cho thành viên; mọi người nhập mã + mật khẩu để vào
-export default function CallTab({ project, isLeader, initialCode = '' }) {
+// Gọi nhóm: trưởng nhóm hoặc thành viên mở phòng (mã phòng + mật khẩu) và gửi cho cả nhóm; mọi người nhập mã + mật khẩu để vào
+export default function CallTab({
+  project, isLeader, isGuest, initialCode = '',
+}) {
+  const { user } = useAuth();
   const [rooms, setRooms] = useState([]);
   const [form, setForm] = useState({ title: '', password: '', notify: true });
   const [join, setJoin] = useState({ code: initialCode, password: '' });
@@ -29,6 +33,7 @@ export default function CallTab({ project, isLeader, initialCode = '' }) {
   }, [initialCode]);
 
   const active = rooms[0];
+  const canManage = isLeader || active?.host?.id === user.id; // trưởng nhóm hoặc người mở phòng
   useEffect(() => {
     if (active && !join.code) setJoin((j) => ({ ...j, code: active.code }));
   }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -92,7 +97,7 @@ export default function CallTab({ project, isLeader, initialCode = '' }) {
       <CallRoom
         token={session.token}
         room={session.room}
-        isLeader={isLeader}
+        isLeader={canManage}
         onLeave={(reason) => { setSession(null); load(); if (reason) setMessage(reason); }}
         onEnd={end}
       />
@@ -104,7 +109,7 @@ export default function CallTab({ project, isLeader, initialCode = '' }) {
       {error && <div className="alert">{error}</div>}
       {message && <div className="info">{message}</div>}
 
-      {isLeader && !active && (
+      {!isGuest && !active && (
         <form className="card" onSubmit={create}>
           <h3>📞 Mở cuộc gọi nhóm</h3>
           <p className="muted small">
@@ -137,9 +142,9 @@ export default function CallTab({ project, isLeader, initialCode = '' }) {
           </div>
           <div className="call-codes">
             <div><small>Mã phòng</small><strong>{active.code}</strong></div>
-            {isLeader && <div><small>Mật khẩu</small><strong>{active.password}</strong></div>}
+            {canManage && <div><small>Mật khẩu</small><strong>{active.password}</strong></div>}
           </div>
-          {isLeader && (
+          {canManage && (
             <div className="row">
               <button type="button" className="btn" onClick={invite}>Gửi lại cho thành viên</button>
               <button type="button" className="btn" onClick={copy}>{copied ? 'Đã sao chép ✓' : 'Sao chép mã + mật khẩu'}</button>
@@ -152,7 +157,7 @@ export default function CallTab({ project, isLeader, initialCode = '' }) {
       <form className="card narrow" onSubmit={enter}>
         <h3>Vào phòng gọi</h3>
         <p className="muted small">
-          {isLeader ? 'Nhập mã phòng + mật khẩu (đã điền sẵn phòng bạn vừa mở).' : 'Nhập mã phòng và mật khẩu trưởng nhóm gửi cho bạn (xem trong mục Thông báo).'}
+          {canManage ? 'Nhập mã phòng + mật khẩu (đã điền sẵn phòng bạn vừa mở).' : 'Nhập mã phòng và mật khẩu người mở phòng gửi cho bạn (xem trong mục Thông báo).'}
         </p>
         <label>Mã phòng
           <input required maxLength={8} className="code-input" placeholder="VD: K7M2QX" value={join.code} onChange={(e) => setJoin({ ...join, code: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })} />

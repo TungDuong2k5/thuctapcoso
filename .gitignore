@@ -13,3 +13,11 @@ server/.vs/
 # Bản sao dữ liệu thật (email, mật khẩu đã mã hóa) – không đưa lên GitHub
 database/taskflow_sqlserver.sql
 database/taskflow_mysql.sql
+
+# Ban sao cac file SQL (co du lieu that) - khong dua len GitHub
+taskflow sql/taskflow_sqlserver.sql
+taskflow sql/taskflow_mysql.sql
+*.KHONG-CHAY.sql.txt
+CU-co-lenh-xoa-KHONG-CHAY.sql.txt
+taskflow sql/taskflow_sqlserver_ban-sao-an-toan.sql
+database/taskflow_sqlserver_ban-sao-an-toan.sql

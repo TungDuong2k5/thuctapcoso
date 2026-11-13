@@ -13,6 +13,9 @@ if not exist "client\node_modules" (
 )
 if not exist "server\.env" copy "server\.env.example" "server\.env" >nul
 
+rem Tao (hoac cap nhat) bieu tuong TaskFlow ngoai Desktop va menu Start
+call "%~dp0tao-bieu-tuong.bat" im-lang
+
 start "TaskFlow API - dung tat cua so nay" /d "%~dp0server" cmd /k npm run dev
 
 rem Doi API san sang (toi da ~30 giay) de trang mo ra la dang nhap duoc ngay

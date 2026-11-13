@@ -19,7 +19,8 @@ if (dialect === 'mysql') {
     port: Number(process.env.MSSQL_PORT) || 1433,
     dialect: 'mssql',
     logging: false,
-    dialectOptions: { options: { encrypt: false, trustServerCertificate: true } },
+    // SQL Server mới bật / máy chậm: câu lệnh đầu có thể mất hơn 15 giây (mặc định) nên cho chờ lâu hơn
+    dialectOptions: { options: { encrypt: false, trustServerCertificate: true, requestTimeout: 120000, connectTimeout: 30000 } },
   });
 } else {
   const storage = process.env.DB_STORAGE === ':memory:'

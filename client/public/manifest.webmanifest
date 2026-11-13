@@ -1,0 +1,22 @@
+{
+  "name": "TaskFlow - Quản lý công việc nhóm",
+  "short_name": "TaskFlow",
+  "description": "Ứng dụng quản lý và báo cáo công việc nhóm: giao việc, nộp báo cáo, nhắc hạn, trò chuyện và gọi nhóm.",
+  "lang": "vi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0f1b33",
+  "categories": ["productivity", "education"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Trang chủ", "url": "/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Dự án của tôi", "url": "/projects?nhom=mine", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

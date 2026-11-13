@@ -722,8 +722,7 @@ describe('Trò chuyện và gọi nhóm', () => {
     expect((await request(app).get(`/api/projects/${projectId}/messages`).set(as(outsider))).status).toBe(403);
   });
 
-  test('chỉ trưởng nhóm mở phòng gọi; thành viên vào bằng mã phòng + mật khẩu được gửi qua thông báo', async () => {
-    expect((await request(app).post(`/api/projects/${projectId}/calls`).set(as(member)).send({})).status).toBe(403);
+  test('trưởng nhóm mở phòng gọi; thành viên vào bằng mã phòng + mật khẩu được gửi qua thông báo', async () => {
 
     const room = await request(app).post(`/api/projects/${projectId}/calls`).set(as(leader)).send({ title: 'Họp tuần', password: 'hop2026' });
     expect(room.status).toBe(201);
@@ -847,6 +846,26 @@ describe('Dự án hoàn thành đúng / chậm tiến độ và tự tắt thô
     await request(app).post(`/api/tasks/${task.body.id}/submit`).set(as(member)).attach('files', Buffer.from('x'), 'bai.docx');
     expect(await urgentOf()).toBe(0);
   });
+
+  test('báo khẩn còn sót của việc đã xong / đã xóa / đã nộp → tự tắt khi mở thông báo', async () => {
+    const memberId = (await request(app).get('/api/auth/me').set(as(member))).body.id;
+    const mk = async (title) => (await request(app).post(`/api/projects/${projectId}/tasks`).set(as(leader))
+      .send({ title, assigneeIds: [memberId], dueDate: '2026-01-02' })).body;
+    const done = await mk('Việc đã xong còn báo khẩn');
+    const gone = await mk('Việc đã xóa còn báo khẩn');
+    const open = await mk('Việc vẫn còn hạn khẩn');
+    // Giả lập thông báo khẩn cũ (VD tạo trước khi có tính năng tự tắt)
+    const { Notification, Task: TaskModel } = require('../src/models');
+    for (const t of [done, gone, open]) {
+      await Notification.create({ userId: memberId, type: 'deadline_overdue', message: `KHẨN ${t.title}`, link: `/projects/${projectId}?task=${t.id}` });
+    }
+    await TaskModel.update({ status: 'done' }, { where: { id: done.id } });
+    await TaskModel.destroy({ where: { id: gone.id } });
+    const links = (await request(app).get('/api/notifications').set(as(member))).body.urgent.map((n) => n.link);
+    expect(links.some((l) => l.endsWith(`?task=${done.id}`))).toBe(false);
+    expect(links.some((l) => l.endsWith(`?task=${gone.id}`))).toBe(false);
+    expect(links.some((l) => l.endsWith(`?task=${open.id}`))).toBe(true);
+  });
 });
 
 describe('Trang chủ (dashboard)', () => {
@@ -864,5 +883,106 @@ describe('Trang chủ (dashboard)', () => {
     expect(l.reviews.some((x) => x.id === t.body.id)).toBe(true);
     const m2 = (await request(app).get('/api/dashboard').set(as(member))).body;
     expect(m2.reviews.some((x) => x.id === t.body.id)).toBe(false);
+  });
+});
+
+describe('Link mời chung của dự án và quyền mở cuộc gọi', () => {
+  const owner = () => leader;
+  let pid;
+  let code;
+
+  test('trưởng nhóm có link sẵn; ai có link đều vào với vai trò thành viên; đổi link thì link cũ hết hiệu lực', async () => {
+    pid = (await request(app).post('/api/projects').set(as(owner())).send({ name: 'Dự án mời bằng link' })).body.id;
+    const res = await request(app).get(`/api/projects/${pid}/invite-link`).set(as(owner()));
+    expect(res.status).toBe(200);
+    code = res.body.code;
+    expect(code).toHaveLength(48);
+    // gọi lại vẫn là link cũ, không tự đổi
+    expect((await request(app).get(`/api/projects/${pid}/invite-link`).set(as(owner()))).body.code).toBe(code);
+
+    // mở link chưa cần đăng nhập; tham gia thì phải đăng nhập
+    const info = await request(app).get(`/api/join/${code}`);
+    expect(info.status).toBe(200);
+    expect(info.body.project.name).toBe('Dự án mời bằng link');
+    expect((await request(app).post(`/api/join/${code}`)).status).toBe(401);
+
+    const newbie = await register('Người vào bằng link', 'vao-bang-link@test.local');
+    const joined = await request(app).post(`/api/join/${code}`).set(as(newbie));
+    expect(joined.body).toEqual({ projectId: pid, joined: true });
+    const detail = await request(app).get(`/api/projects/${pid}`).set(as(newbie));
+    expect(detail.body.myRole).toBe('member');
+    expect(detail.body.inviteCode).toBeUndefined(); // thành viên không thấy mã mời
+    expect((await request(app).get(`/api/projects/${pid}/invite-link`).set(as(newbie))).status).toBe(403);
+
+    // bấm lại link không đổi vai trò; trưởng nhóm bấm link vẫn là trưởng nhóm
+    expect((await request(app).post(`/api/join/${code}`).set(as(newbie))).body.joined).toBe(false);
+    await request(app).post(`/api/join/${code}`).set(as(owner()));
+    expect((await request(app).get(`/api/projects/${pid}`).set(as(owner()))).body.myRole).toBe('leader');
+
+    const reset = await request(app).post(`/api/projects/${pid}/invite-link/reset`).set(as(owner()));
+    expect(reset.body.code).not.toBe(code);
+    expect((await request(app).get(`/api/join/${code}`)).status).toBe(404);
+    code = reset.body.code;
+  });
+
+  test('thành viên mở được phòng gọi và tự quản lý phòng của mình; khách chỉ xem thì không', async () => {
+    const m1 = await register('Thành viên mở phòng', 'mo-phong@test.local');
+    const m2 = await register('Thành viên khác', 'tv-khac@test.local');
+    await request(app).post(`/api/join/${code}`).set(as(m1));
+    await request(app).post(`/api/join/${code}`).set(as(m2));
+
+    const room = await request(app).post(`/api/projects/${pid}/calls`).set(as(m1)).send({ password: 'hop2026' });
+    expect(room.status).toBe(201);
+    const list = async (who) => (await request(app).get(`/api/projects/${pid}/calls`).set(as(who))).body[0];
+    expect((await list(m1)).password).toBe('hop2026');
+    expect((await list(owner())).password).toBe('hop2026');
+    expect((await list(m2)).password).toBeUndefined(); // người khác nhận qua thông báo
+
+    expect((await request(app).post(`/api/calls/${room.body.id}/end`).set(as(m2))).status).toBe(403);
+    expect((await request(app).post(`/api/calls/${room.body.id}/invite`).set(as(m1)).send({})).status).toBe(200);
+    expect((await request(app).post(`/api/calls/${room.body.id}/end`).set(as(m1))).status).toBe(200);
+
+    const viewer = await register('Khách xem', 'khach-xem@test.local');
+    await request(app).post(`/api/projects/${pid}/members`).set(as(owner())).send({ emails: 'khach-xem@test.local', role: 'guest' });
+    const inv = (await request(app).get('/api/invitations/mine').set(as(viewer))).body[0];
+    await request(app).post(`/api/invitations/${inv.token}/accept`).set(as(viewer));
+    expect((await request(app).post(`/api/projects/${pid}/calls`).set(as(viewer)).send({})).status).toBe(403);
+  });
+
+  test('dự án đã hoàn thành không nhận thêm người qua link', async () => {
+    await request(app).put(`/api/projects/${pid}`).set(as(owner())).send({ status: 'archived' });
+    expect((await request(app).get(`/api/join/${code}`)).status).toBe(400);
+  });
+});
+
+describe('Gửi mail lời mời', () => {
+  const mailer = require('../src/services/mailer');
+  let spy;
+  beforeAll(() => { spy = jest.spyOn(mailer, 'sendInviteMail').mockResolvedValue('sent'); });
+  afterAll(() => spy.mockRestore());
+
+  test('mời email thì gửi mail có link đúng địa chỉ đang mở; mời lại là gửi lại; địa chỉ lạ không được đưa vào mail', async () => {
+    const pid = (await request(app).post('/api/projects').set(as(leader)).send({ name: 'Dự án gửi mail' })).body.id;
+    const res = await request(app).post(`/api/projects/${pid}/members`).set(as(leader))
+      .set('Origin', 'https://abc-xyz.trycloudflare.com')
+      .send({ emails: 'nguoi-nhan@test.local' });
+    expect(res.body.results[0].mail).toBe('sent');
+    const arg = spy.mock.calls.at(-1)[0];
+    expect(arg.to).toBe('nguoi-nhan@test.local');
+    expect(arg.projectName).toBe('Dự án gửi mail');
+    expect(arg.link).toBe(`https://abc-xyz.trycloudflare.com/invite/${res.body.results[0].token}`);
+
+    const again = await request(app).post(`/api/projects/${pid}/members`).set(as(leader))
+      .set('Origin', 'https://trang-gia-mao.example')
+      .send({ emails: 'nguoi-nhan@test.local' });
+    expect(again.body.results[0].status).toBe('already_invited');
+    expect(spy.mock.calls.at(-1)[0].link.startsWith('https://trang-gia-mao.example')).toBe(false);
+  });
+
+  test('chưa cấu hình thì không gửi, lời mời vẫn được tạo', async () => {
+    spy.mockRestore();
+    const pid = (await request(app).post('/api/projects').set(as(leader)).send({ name: 'Dự án không mail' })).body.id;
+    const res = await request(app).post(`/api/projects/${pid}/members`).set(as(leader)).send({ emails: 'khong-mail@test.local' });
+    expect(res.body.results[0]).toMatchObject({ status: 'invited_new', mail: 'off' });
   });
 });

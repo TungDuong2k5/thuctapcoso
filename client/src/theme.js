@@ -10,12 +10,16 @@ export const BACKGROUNDS = [
   { id: 'bg4', name: 'Ảnh nền 4', url: bing('OIP.gnvK2FfM34SpM-B8m6r-yQHaFB') },
 ];
 
+// v2: mặc định chế độ sáng; lựa chọn lưu trước bản này được chuyển về sáng 1 lần (giữ ảnh nền)
+const VERSION = 2;
 export function getTheme() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
-    return { mode: saved.mode === 'light' ? 'light' : 'dark', bg: BACKGROUNDS.some((b) => b.id === saved.bg) ? saved.bg : 'default' };
+    const bg = BACKGROUNDS.some((b) => b.id === saved.bg) ? saved.bg : 'default';
+    if (saved.v !== VERSION) return { mode: 'light', bg };
+    return { mode: saved.mode === 'dark' ? 'dark' : 'light', bg };
   } catch {
-    return { mode: 'dark', bg: 'default' };
+    return { mode: 'light', bg: 'default' };
   }
 }
 
@@ -25,7 +29,8 @@ export function applyTheme(theme = getTheme()) {
   root.dataset.theme = theme.mode;
   const bg = BACKGROUNDS.find((b) => b.id === theme.bg);
   if (bg?.url) {
-    const veil = theme.mode === 'dark' ? 'rgba(15, 23, 42, 0.62)' : 'rgba(255, 255, 255, 0.35)';
+    // lớp phủ vừa phải: ảnh nền vẫn rõ nhưng dịu lại để chữ (đặt thẳng trên ảnh) dễ đọc
+    const veil = theme.mode === 'dark' ? 'rgba(15, 23, 42, 0.45)' : 'rgba(255, 255, 255, 0.38)';
     document.body.style.backgroundImage = `linear-gradient(${veil}, ${veil}), url("${bg.url}")`;
     document.body.style.backgroundSize = 'cover';
     document.body.style.backgroundPosition = 'center';
@@ -41,7 +46,7 @@ export function applyTheme(theme = getTheme()) {
 }
 
 export function saveTheme(theme) {
-  try { localStorage.setItem(KEY, JSON.stringify(theme)); } catch { /* trình duyệt chặn lưu trữ */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ ...theme, v: VERSION })); } catch { /* trình duyệt chặn lưu trữ */ }
   applyTheme(theme);
   window.dispatchEvent(new CustomEvent('taskflow:theme', { detail: theme }));
 }

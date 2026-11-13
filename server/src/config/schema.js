@@ -26,6 +26,7 @@ const ADDED_COLUMNS = [
   { table: 'tasks', column: 'due_time', spec: { type: DataTypes.STRING(5) } },
   { table: 'tasks', column: 'last_urgent_at', spec: { type: DataTypes.DATE } },
   { table: 'projects', column: 'completed_at', spec: { type: DataTypes.DATE } },
+  { table: 'projects', column: 'invite_code', spec: { type: DataTypes.STRING(48) } },
   { table: 'tasks', column: 'submitted_late_minutes', spec: { type: DataTypes.INTEGER, defaultValue: 0 } },
   { table: 'users', column: 'has_password', spec: { type: DataTypes.BOOLEAN, defaultValue: true } },
 ];

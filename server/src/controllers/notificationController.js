@@ -1,8 +1,9 @@
 const { Op } = require('sequelize');
 const { Notification } = require('../models');
-const { URGENT_TYPES } = require('../services/deadlines');
+const { URGENT_TYPES, pruneStaleUrgent } = require('../services/notify');
 
 async function list(req, res) {
+  await pruneStaleUrgent(req.user.id); // việc đã xong / đã nộp → tắt báo khẩn còn sót
   const items = await Notification.findAll({
     where: { userId: req.user.id },
     order: [['id', 'DESC']],

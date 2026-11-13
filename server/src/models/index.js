@@ -48,7 +48,12 @@ const Project = sequelize.define('Project', {
   endDate: { type: DataTypes.DATEONLY },
   status: { type: DataTypes.ENUM('active', 'archived'), defaultValue: 'active' },
   completedAt: { type: DataTypes.DATE }, // lúc trưởng nhóm đánh dấu dự án đã hoàn thành
-}, { tableName: 'projects', underscored: true });
+  inviteCode: { type: DataTypes.STRING(48) }, // mã của link mời chung (ai có link đều vào được với vai trò thành viên)
+}, {
+  tableName: 'projects',
+  underscored: true,
+  defaultScope: { attributes: { exclude: ['inviteCode'] } }, // không gửi mã mời cho thành viên; lấy bằng Project.unscoped()
+});
 
 const ProjectMember = sequelize.define('ProjectMember', {
   projectId: { type: DataTypes.INTEGER, primaryKey: true },

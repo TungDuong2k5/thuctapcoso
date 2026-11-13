@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 import Avatar from './Avatar';
+import { canInstall, onInstallChange, promptInstall } from '../pwa';
 
 // Biểu tượng nét mảnh (SVG) cho thanh bên
 const ICONS = {
@@ -15,6 +16,13 @@ const ICONS = {
   shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
   panel: 'M4 4h16v16H4zM9 4v16',
   logout: 'M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4',
+  plus: 'M12 5v14M5 12h14',
+  list: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1',
+  board: 'M4 4h16v16H4zM9.5 4v16M14.5 4v16',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  wrench: 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4',
   dots: 'M12 6.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2M12 19.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2',
 };
 export function Icon({ name, size = 19 }) {
@@ -117,6 +125,7 @@ export default function Layout({ children }) {
               ))}
             </div>
           ))}
+          <InstallButton />
         </nav>
         <UserCard user={user} onProfile={() => navigate('/profile')} onSignOut={signOut} />
       </aside>
@@ -132,7 +141,6 @@ export default function Layout({ children }) {
             <Link to="/profile" className="user-pill" title="Thông tin cá nhân">
               {user.studentCode ? `${user.studentCode} - ` : ''}{user.fullName}
             </Link>
-            {inProject && <div id="topbar-menu-slot" className="menu-slot" />}
           </div>
         </header>
         <main className="content">{children}</main>
@@ -168,5 +176,18 @@ function UserCard({ user, onProfile, onSignOut }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Nút "Cài ứng dụng" (PWA): chỉ hiện khi trình duyệt cho phép cài và app chưa được cài
+function InstallButton() {
+  const [show, setShow] = useState(canInstall());
+  useEffect(() => onInstallChange(() => setShow(canInstall())), []);
+  if (!show) return null;
+  return (
+    <button type="button" className="side-item install-app" title="Cài TaskFlow như một ứng dụng" onClick={promptInstall}>
+      <Icon name="download" />
+      <span className="side-label">Cài ứng dụng</span>
+    </button>
   );
 }

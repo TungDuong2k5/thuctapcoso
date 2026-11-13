@@ -30,6 +30,7 @@ router.post('/auth/reset-password', h(auth.resetPassword));
 // /invitations/mine phải khai báo trước /invitations/:token (không thì 'mine' bị hiểu là mã mời)
 router.get('/invitations/mine', requireAuth, h(projects.myInvitations));
 router.get('/invitations/:token', h(projects.invitationInfo));
+router.get('/join/:code', h(projects.joinInfo));
 
 // Từ đây trở xuống phải đăng nhập
 router.use(requireAuth);
@@ -59,6 +60,9 @@ router.delete('/labels/:id', h(labels.remove));
 router.post('/projects/:id/members', h(projects.addMembers));
 router.delete('/projects/:id/members/:userId', h(projects.removeMember));
 router.get('/projects/:id/invitations', h(projects.listInvitations));
+router.get('/projects/:id/invite-link', h(projects.getInviteLink));
+router.post('/projects/:id/invite-link/reset', h(projects.resetInviteLink));
+router.post('/join/:code', h(projects.joinByLink));
 router.delete('/invitations/:inviteId', h(projects.cancelInvitation));
 router.post('/invitations/:token/accept', h(projects.acceptInvitation));
 router.post('/invitations/:token/decline', h(projects.declineInvitation));

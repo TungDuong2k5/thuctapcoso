@@ -9,6 +9,7 @@ const { emitToProject } = require('../sockets');
 const { getRole, requireLeader } = require('../services/projectAccess');
 const { joinProject } = require('../services/membership');
 const { notify, resolveUrgent } = require('../services/notify');
+const mailer = require('../services/mailer');
 const { personStats, assignedTo } = require('../services/progress');
 const { HttpError } = require('../utils/http');
 
@@ -143,6 +144,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Trưởng nhóm nhập 1 hoặc nhiều email (cách nhau bởi dấu phẩy, khoảng trắng, xuống dòng).
 // Mỗi email nhận một LỜI MỜI; người được mời tự bấm Tham gia hoặc Từ chối.
 // Email đã có tài khoản thì nhận thông báo ngay; chưa có thì thấy lời mời sau khi đăng ký.
+const ROLE_LABEL = { leader: 'Trưởng nhóm', member: 'Thành viên', guest: 'Khách (chỉ xem)' };
+
 async function addMembers(req, res) {
   const projectId = Number(req.params.id);
   await requireLeader(projectId, req.user);
@@ -154,6 +157,14 @@ async function addMembers(req, res) {
   if (!emails.length) throw new HttpError(400, 'Vui lòng nhập ít nhất một email');
 
   const project = await Project.findByPk(projectId);
+  const baseUrl = mailer.publicUrl(req);
+  const sendMail = (email, token, inviteRole) => mailer.sendInviteMail({
+    to: email,
+    inviterName: req.user.fullName,
+    projectName: project.name,
+    roleLabel: ROLE_LABEL[inviteRole],
+    link: `${baseUrl}/invite/${token}`,
+  });
   const results = [];
   for (const email of emails) {
     if (!EMAIL_RE.test(email)) {
@@ -171,7 +182,10 @@ async function addMembers(req, res) {
     }
     const existing = await Invitation.findOne({ where: { projectId, email, status: 'pending' } });
     if (existing) {
-      results.push({ email, status: 'already_invited', token: existing.token });
+      // Mời lại người đang chờ = gửi lại mail
+      results.push({
+        email, status: 'already_invited', token: existing.token, mail: await sendMail(email, existing.token, existing.role),
+      });
       continue;
     }
     const invite = await Invitation.create({
@@ -184,7 +198,9 @@ async function addMembers(req, res) {
         link: '/',
       });
     }
-    results.push({ email, status: user ? 'invited' : 'invited_new', token: invite.token });
+    results.push({
+      email, status: user ? 'invited' : 'invited_new', token: invite.token, mail: await sendMail(email, invite.token, role),
+    });
   }
   res.status(201).json({ results });
 }
@@ -355,7 +371,57 @@ async function searchUsers(req, res) {
   res.json(users);
 }
 
+// ----- Link mời chung của dự án: có sẵn, không cần nhập email -----
+const newInviteCode = () => crypto.randomBytes(24).toString('hex');
+
+// Trưởng nhóm lấy link mời (tạo mã ở lần đầu)
+async function getInviteLink(req, res) {
+  await requireLeader(req.params.id, req.user);
+  const project = await Project.unscoped().findByPk(req.params.id, { attributes: ['id', 'inviteCode'] });
+  if (!project.inviteCode) await project.update({ inviteCode: newInviteCode() });
+  res.json({ code: project.inviteCode });
+}
+
+// Đổi link mới: link cũ lập tức hết hiệu lực (khi lỡ gửi nhầm người)
+async function resetInviteLink(req, res) {
+  await requireLeader(req.params.id, req.user);
+  const project = await Project.unscoped().findByPk(req.params.id, { attributes: ['id', 'inviteCode'] });
+  await project.update({ inviteCode: newInviteCode() });
+  res.json({ code: project.inviteCode });
+}
+
+async function findByInviteCode(code) {
+  const project = code ? await Project.unscoped().findOne({
+    where: { inviteCode: code },
+    attributes: ['id', 'name', 'status'],
+    include: [{ model: User, as: 'owner', attributes: ['fullName'] }],
+  }) : null;
+  if (!project) throw new HttpError(404, 'Link mời không hợp lệ hoặc đã được đổi');
+  if (project.status !== 'active') throw new HttpError(400, 'Dự án này đã hoàn thành, không nhận thêm thành viên');
+  return project;
+}
+
+// Trang mở link (chưa cần đăng nhập): hiện tên dự án, trưởng nhóm
+async function joinInfo(req, res) {
+  const project = await findByInviteCode(req.params.code);
+  res.json({ project: { id: project.id, name: project.name }, ownerName: project.owner?.fullName });
+}
+
+// Bấm "Tham gia": vào dự án với vai trò thành viên; đã ở trong dự án thì giữ nguyên vai trò
+async function joinByLink(req, res) {
+  const project = await findByInviteCode(req.params.code);
+  const joined = await joinProject(project.id, req.user, 'member');
+  if (req.user.email) {
+    await Invitation.update({ status: 'accepted' }, { where: { projectId: project.id, email: req.user.email, status: 'pending' } });
+  }
+  res.json({ projectId: project.id, joined });
+}
+
 module.exports = {
+  getInviteLink,
+  resetInviteLink,
+  joinInfo,
+  joinByLink,
   list,
   create,
   detail,

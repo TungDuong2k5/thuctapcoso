@@ -15,7 +15,7 @@ const GROUPS = {
     icon: '👑', title: 'Dự án của tôi', hint: 'Dự án bạn làm trưởng nhóm', empty: 'Bạn chưa làm trưởng nhóm dự án nào. Bấm “+ Dự án mới” để tạo.',
   },
   joined: {
-    icon: '🤝', title: 'Dự án đã tham gia', hint: 'Dự án bạn là thành viên', empty: 'Bạn chưa tham gia dự án nào của người khác. Lời mời tham gia sẽ hiện ở trang Dự án.',
+    icon: '🤝', title: 'Dự án đã tham gia', hint: 'Dự án bạn là thành viên', empty: 'Bạn chưa tham gia dự án nào của người khác. Khi trưởng nhóm mời, lời mời sẽ hiện ở đầu trang này để bạn bấm Tham gia.',
   },
 };
 
@@ -57,10 +57,13 @@ export default function Projects() {
           <h2>{GROUPS[group].icon} {GROUPS[group].title} {projects && <span className="count-pill">{lists[group].length}</span>}</h2>
           <small className="muted">{GROUPS[group].hint}</small>
         </div>
-        <button type="button" className="btn primary" onClick={() => setCreating(!creating)}>+ Dự án mới</button>
+        {/* Chỉ "Dự án của tôi" mới tạo dự án (người tạo là trưởng nhóm); "Đã tham gia" là vai trò thành viên */}
+        {group === 'mine' && (
+          <button type="button" className="btn primary" onClick={() => setCreating(!creating)}>+ Dự án mới</button>
+        )}
       </div>
 
-      {creating && (
+      {creating && group === 'mine' && (
         <form className="card form-grid" onSubmit={create}>
           {error && <div className="alert span2">{error}</div>}
           <label className="span2">Tên dự án<input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
