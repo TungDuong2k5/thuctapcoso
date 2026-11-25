@@ -11,7 +11,27 @@ const {
 } = require('../models');
 const { reviewerIds } = require('./taskFlow');
 const { notify, URGENT_TYPES } = require('./notify');
+const mailer = require('./mailer');
 const { deadlineOf, formatDeadline, formatDuration } = require('../utils/deadline');
+
+// Gửi thêm email nhắc hạn cho người làm (chỉ lúc báo khẩn 1 lần và lúc quá hạn, không gửi theo nhắc lặp 15 phút).
+// Lỗi gửi mail không làm hỏng việc nhắc trong ứng dụng.
+async function emailWorkers(ids, t, overdue) {
+  const appUrl = (process.env.APP_URL || 'http://localhost:5180').replace(/\/$/, '');
+  const users = await User.findAll({ where: { id: ids, isActive: true }, attributes: ['id', 'fullName', 'email'] });
+  for (const u of users) {
+    if (!u.email) continue;
+    await mailer.sendDeadlineMail({
+      to: u.email,
+      name: u.fullName,
+      taskTitle: t.title,
+      projectName: t.Project.name,
+      deadlineText: formatDeadline(t),
+      overdue,
+      link: `${appUrl}/projects/${t.projectId}?task=${t.id}`,
+    });
+  }
+}
 
 const TIME_ZONE = 'Asia/Ho_Chi_Minh';
 const HOUR = 3600 * 1000;
@@ -63,6 +83,7 @@ async function checkDeadlines(now = Date.now()) {
           message: `🚨 KHẨN – Quá hạn: "${t.title}" ${where} đã trễ ${late} (hạn ${formatDeadline(t)}) mà chưa hoàn thành. Vẫn nộp được nhưng sẽ bị ghi Nộp muộn!`,
           link,
         });
+        await emailWorkers(worker, t, true);
         // Chỉ trưởng nhóm theo dõi tiến độ của người khác
         await notify(leaders.filter((id) => !worker.includes(id)), null, {
           type: 'deadline_overdue',
@@ -97,6 +118,7 @@ async function checkDeadlines(now = Date.now()) {
           message: `🚨 KHẨN – Sắp đến hạn: "${t.title}" ${where} hết hạn ${at}, còn chưa đầy 1 ngày (${leftText}) mà bạn chưa gửi báo cáo`,
           link,
         });
+        await emailWorkers(worker, t, false);
         t.dueTodayRemindedFor = t.dueDate;
         t.remindedSoonFor = t.dueDate;
       } else {

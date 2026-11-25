@@ -986,3 +986,44 @@ describe('Gửi mail lời mời', () => {
     expect(res.body.results[0]).toMatchObject({ status: 'invited_new', mail: 'off' });
   });
 });
+
+describe('Email nhắc hạn', () => {
+  const mailer = require('../src/services/mailer');
+  const { checkDeadlines } = require('../src/services/deadlines');
+  let spy;
+  beforeAll(() => { spy = jest.spyOn(mailer, 'sendDeadlineMail').mockResolvedValue('sent'); });
+  afterAll(() => spy.mockRestore());
+
+  test('gửi email khi còn dưới 1 ngày (1 lần) và khi quá hạn; nhắc lặp 3 giờ cuối không gửi email', async () => {
+    const worker = await register('Người nhận mail hạn', 'nhan-mail-han@test.local');
+    const pid = (await request(app).post('/api/projects').set(as(leader)).send({ name: 'Dự án mail nhắc hạn' })).body.id;
+    const { code } = (await request(app).get(`/api/projects/${pid}/invite-link`).set(as(leader))).body;
+    await request(app).post(`/api/join/${code}`).set(as(worker));
+    const workerId = (await request(app).get('/api/auth/me').set(as(worker))).body.id;
+    const at = (ms) => {
+      const d = new Date(Date.now() + ms);
+      const pad = (n) => String(n).padStart(2, '0');
+      return { dueDate: d.toLocaleDateString('sv-SE', { timeZone: 'Asia/Ho_Chi_Minh' }), dueTime: d.toLocaleTimeString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' }) || `${pad(d.getHours())}:${pad(d.getMinutes())}` };
+    };
+    const mk = (title, due) => request(app).post(`/api/projects/${pid}/tasks`).set(as(leader)).send({ title, assigneeIds: [workerId], ...due });
+    await mk('Mail sắp hạn 10 giờ', at(10 * 3600e3));
+    await mk('Mail quá hạn', at(-30 * 3600e3));
+    await mk('Mail còn 1 giờ', at(3600e3));
+
+    spy.mockClear();
+    await checkDeadlines();
+    const calls = spy.mock.calls.map(([a]) => a).filter((a) => a.projectName === 'Dự án mail nhắc hạn');
+    const byTitle = (t) => calls.filter((a) => a.taskTitle === t);
+    expect(byTitle('Mail sắp hạn 10 giờ')).toHaveLength(1);
+    expect(byTitle('Mail sắp hạn 10 giờ')[0]).toMatchObject({ to: 'nhan-mail-han@test.local', overdue: false });
+    expect(byTitle('Mail quá hạn')).toHaveLength(1);
+    expect(byTitle('Mail quá hạn')[0].overdue).toBe(true);
+    expect(byTitle('Mail quá hạn')[0].link).toMatch(/\/projects\/\d+\?task=\d+$/);
+    expect(byTitle('Mail còn 1 giờ')).toHaveLength(0); // 3 giờ cuối chỉ nhắc trong ứng dụng
+
+    // chạy lại ngay: không gửi trùng
+    spy.mockClear();
+    await checkDeadlines();
+    expect(spy.mock.calls.filter(([a]) => a.projectName === 'Dự án mail nhắc hạn')).toHaveLength(0);
+  });
+});

@@ -63,6 +63,36 @@ async function sendInviteMail({
   }
 }
 
+// Email nhắc hạn: còn dưới 1 ngày (khẩn) hoặc đã quá hạn mà chưa nộp. Trả về 'sent' | 'failed' | 'off'.
+async function sendDeadlineMail({
+  to, name, taskTitle, projectName, deadlineText, overdue, link,
+}) {
+  if (!isConfigured()) return 'off';
+  const heading = overdue ? 'Công việc đã QUÁ HẠN' : 'Công việc sắp hết hạn (còn dưới 1 ngày)';
+  const note = overdue
+    ? 'Bạn vẫn nộp được nhưng bài sẽ bị ghi Nộp muộn. Hãy nộp càng sớm càng tốt.'
+    : 'Bạn chưa gửi báo cáo cho công việc này. Hãy nộp trước hạn nhé.';
+  try {
+    await createTransport().sendMail({
+      from: process.env.MAIL_FROM || `TaskFlow <${process.env.SMTP_USER}>`,
+      to,
+      subject: `${overdue ? '[QUÁ HẠN]' : '[SẮP HẾT HẠN]'} "${taskTitle}" – ${projectName}`,
+      text: `Chào ${name},\n\n${heading}: "${taskTitle}" (dự án ${projectName}), hạn nộp ${deadlineText}.\n${note}\n\nMở công việc: ${link}`,
+      html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:520px;margin:auto;color:#1f2937">
+  <h2 style="color:${overdue ? '#b91c1c' : '#b45309'}">${heading}</h2>
+  <p>Chào <strong>${escapeHtml(name)}</strong>,</p>
+  <p>Công việc <strong>${escapeHtml(taskTitle)}</strong> trong dự án <strong>${escapeHtml(projectName)}</strong> có hạn nộp <strong>${escapeHtml(deadlineText)}</strong>.</p>
+  <p>${note}</p>
+  <p style="margin:24px 0"><a href="${escapeHtml(link)}" style="background:#2563eb;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">Mở công việc</a></p>
+</div>`,
+    });
+    return 'sent';
+  } catch (err) {
+    console.error('Không gửi được mail nhắc hạn:', err.message);
+    return 'failed';
+  }
+}
+
 module.exports = {
-  isConfigured, createTransport, publicUrl, sendInviteMail,
+  isConfigured, createTransport, publicUrl, sendInviteMail, sendDeadlineMail,
 };
